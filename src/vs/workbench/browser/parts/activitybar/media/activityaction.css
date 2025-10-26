@@ -46,21 +46,21 @@
 	z-index: 1;
 	display: flex;
 	overflow: hidden;
-	width: 48px;
-	height: 48px;
+	width: 40px; /* VYBE: Reduced from 48px to 40px */
+	height: 40px; /* VYBE: Reduced from 48px to 40px */
 	margin-right: 0;
 	box-sizing: border-box;
 
 }
 
 .monaco-workbench .activitybar > .content :not(.monaco-menu) > .monaco-action-bar .action-label:not(.codicon) {
-	font-size: 15px;
+	font-size: 12px; /* VYBE: Reduced from 15px */
 	line-height: 40px;
-	padding: 0 0 0 48px;
+	padding: 0 0 0 40px; /* VYBE: Adjusted from 48px to 40px */
 }
 
 .monaco-workbench .activitybar > .content :not(.monaco-menu) > .monaco-action-bar .action-label.codicon {
-	font-size: 24px;
+	font-size: 20px; /* VYBE: Icon size */
 	align-items: center;
 	justify-content: center;
 }
@@ -157,8 +157,8 @@
 
 .monaco-workbench .activitybar > .content :not(.monaco-menu) > .monaco-action-bar .badge .badge-content {
 	position: absolute;
-	top: 24px;
-	right: 8px;
+	top: 20px; /* VYBE: Adjusted from 24px for smaller icons */
+	right: 6px; /* VYBE: Adjusted from 8px for narrower bar */
 	font-size: 9px;
 	font-weight: 600;
 	min-width: 8px;
@@ -174,8 +174,8 @@
 	font-weight: 600;
 	font-size: 9px;
 	line-height: 10px;
-	top: 24px;
-	right: 6px;
+	top: 20px; /* VYBE: Adjusted from 24px for smaller icons */
+	right: 4px; /* VYBE: Adjusted from 6px for narrower bar */
 	padding: 2px 3px;
 	border-radius: 7px;
 	background-color: var(--vscode-profileBadge-background);

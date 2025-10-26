@@ -13,14 +13,30 @@
 
 .monaco-pane-view .pane > .pane-header {
 	position: relative;
+	padding-left: 0px !important; /* VYBE: Remove any default padding */
+	padding-right: 0px !important; /* VYBE: Remove any default padding */
 }
 
 .monaco-pane-view .pane > .pane-header.not-collapsible .twisty-container {
 	display: none;
 }
 
-.monaco-pane-view .pane > .pane-header.not-collapsible .title {
-	margin-left: 8px;
+.monaco-pane-view .pane > .pane-header.not-collapsible h3.title {
+	margin: 0 !important; /* VYBE: Remove all margins */
+	padding: 0 !important; /* VYBE: Remove all padding */
+	padding-left: 8px !important; /* VYBE: Add only left padding to match welcome content (8px) */
+}
+
+/* VYBE: Specific override for Explorer pane header */
+.monaco-workbench .part.sidebar .monaco-pane-view .pane > .pane-header.not-collapsible h3.title {
+	margin: 0 !important;
+	padding: 0 !important;
+	padding-left: 8px !important;
+}
+
+/* VYBE: Test visibility - adds red background to confirm CSS is loading */
+.monaco-workbench .part.sidebar .monaco-pane-view .pane > .pane-header.not-collapsible {
+	background-color: rgba(255, 0, 0, 0.1) !important; /* VYBE: Temporary test background */
 }
 
 .monaco-pane-view .pane > .pane-header > .actions.show-always,
@@ -47,6 +63,7 @@
 	min-width: 3ch;
 	-webkit-margin-before: 0;
 	-webkit-margin-after: 0;
+	margin-left: 0 !important; /* VYBE: Ensure no left margin */
 }
 
 .monaco-pane-view .pane > .pane-header .description {

@@ -14,6 +14,18 @@
   "contributes": {
     "themes": [
       {
+        "id": "VYBE Light",
+        "label": "VYBE Light",
+        "uiTheme": "vs",
+        "path": "./themes/vybe-light.json"
+      },
+      {
+        "id": "VYBE Dark",
+        "label": "VYBE Dark",
+        "uiTheme": "vs-dark",
+        "path": "./themes/vybe-dark.json"
+      },
+      {
         "id": "Default Dark+",
         "label": "%darkPlusColorThemeLabel%",
         "uiTheme": "vs-dark",

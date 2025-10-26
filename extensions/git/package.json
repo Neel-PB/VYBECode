@@ -3784,12 +3784,6 @@
         "contents": "%view.workbench.cloneRepository%",
         "when": "config.git.enabled && git.state == initialized && scm.providerCount == 0",
         "group": "5_scm@1"
-      },
-      {
-        "view": "explorer",
-        "contents": "%view.workbench.learnMore%",
-        "when": "config.git.enabled && git.state == initialized && scm.providerCount == 0",
-        "group": "5_scm@10"
       }
     ]
   },

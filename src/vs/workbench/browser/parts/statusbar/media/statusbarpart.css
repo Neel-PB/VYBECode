@@ -11,6 +11,9 @@
 	font-size: 12px;
 	display: flex;
 	overflow: hidden;
+	/* VYBE: Ensure status bar always appears above panels */
+	position: relative !important;
+	z-index: 100 !important;
 }
 
 .monaco-workbench.monaco-enable-motion .part.statusbar {

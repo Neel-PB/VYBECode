@@ -4,15 +4,15 @@
 	<metadata_license>@@LICENSE@@</metadata_license>
 	<project_license>@@LICENSE@@</project_license>
 	<name>@@NAME_LONG@@</name>
-	<url type="homepage">https://code.visualstudio.com</url>
-	<summary>Visual Studio Code. Code editing. Redefined.</summary>
+	<url type="homepage">https://vybe.dev</url>
+	<summary>VYBE. Agentic Application Development Interface.</summary>
 	<description>
-		<p>Visual Studio Code is a new choice of tool that combines the simplicity of a code editor with what developers need for the core edit-build-debug cycle. See https://code.visualstudio.com/docs/setup/linux for installation instructions and FAQ.</p>
+		<p>VYBE is a truly agentic application development interface that combines powerful code editing with AI-powered assistance. It features a unique "vibe coding mode" with integrated chat and preview capabilities for rapid application development.</p>
 	</description>
 	<screenshots>
 		<screenshot type="default">
-			<image>https://code.visualstudio.com/home/home-screenshot-linux-lg.png</image>
-			<caption>Editing TypeScript and searching for extensions</caption>
+			<image>https://vybe.dev/screenshot.png</image>
+			<caption>VYBE in action</caption>
 		</screenshot>
 	</screenshots>
 </component>

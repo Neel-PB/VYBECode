@@ -299,8 +299,12 @@ abstract class ViewItem<TLayoutContext, TView extends IView<TLayoutContext>> {
 class VerticalViewItem<TLayoutContext, TView extends IView<TLayoutContext>> extends ViewItem<TLayoutContext, TView> {
 
 	layoutContainer(offset: number): void {
-		this.container.style.top = `${offset}px`;
-		this.container.style.height = `${this.size}px`;
+		// VYBE: Add 3px gap below title bar (ONLY to top-level middle section)
+		const vybeOffset = (offset >= 50 && offset <= 65) ? offset + 3 : offset;
+		// VYBE: Reduce height by 3px to prevent bleeding into status bar
+		const vybeHeight = (offset >= 50 && offset <= 65) ? this.size - 3 : this.size;
+		this.container.style.top = `${vybeOffset}px`;
+		this.container.style.height = `${vybeHeight}px`;
 	}
 }
 

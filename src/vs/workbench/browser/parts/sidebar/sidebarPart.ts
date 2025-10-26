@@ -156,7 +156,8 @@ export class SidebarPart extends AbstractPaneCompositePart {
 			return;
 		}
 
-		super.layout(width, height, top, left);
+		// VYBE: Reduce height by 3px to create gap above status bar
+		super.layout(width, height - 3, top, left);
 	}
 
 	protected override getTitleAreaDropDownAnchorAlignment(): AnchorAlignment {

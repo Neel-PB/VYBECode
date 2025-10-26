@@ -22,7 +22,7 @@ Registry.as<IConfigurationRegistry>(ConfigurationExtensions.Configuration)
 			'workbench.sash.size': {
 				type: 'number',
 				default: isIOS ? 20 : 4,
-				minimum: 1,
+				minimum: 4,
 				maximum: 20,
 				description: localize('sashSize', "Controls the feedback area size in pixels of the dragging area in between views/editors. Set it to a larger value if you feel it's hard to resize views using the mouse.")
 			},

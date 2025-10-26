@@ -1315,8 +1315,13 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		this.top = top;
 		this.left = left;
 
+		// VYBE: Reduce height by 3px ONLY when panel is closed (to create gap above status bar)
+		// When panel is open, the gap is created by the panel's margin-top instead
+		const isPanelVisible = this.layoutService.isVisible(Parts.PANEL_PART);
+		const vybeHeight = isPanelVisible ? height : height - 3;
+
 		// Layout contents
-		const contentAreaSize = super.layoutContents(width, height).contentSize;
+		const contentAreaSize = super.layoutContents(width, vybeHeight).contentSize;
 
 		// Layout editor container
 		this.doLayout(Dimension.lift(contentAreaSize), top, left);

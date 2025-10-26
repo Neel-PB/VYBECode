@@ -7,6 +7,7 @@
 .monaco-workbench .part.titlebar {
 	display: flex;
 	flex-direction: row;
+	background-color: var(--vscode-titleBar-activeBackground) !important; /* VYBE: Use theme titlebar color */
 }
 
 .monaco-workbench.mac .part.titlebar {
@@ -464,4 +465,46 @@
 	padding: 0 2px;
 	border-radius: 16px;
 	text-align: center;
+}
+
+/* VYBE Mode Toggle Buttons - positioned in titlebar-left */
+.titlebar-left .vybe-mode-toggle {
+	display: inline-flex;
+	align-items: center;
+	background-color: var(--vscode-input-background);
+	border-radius: 6px;
+	padding: 2px;
+	margin-left: 8px;
+	margin-right: 12px;
+	gap: 1px;
+	height: 24px;
+}
+
+.vybe-mode-btn {
+	padding: 5px 14px;
+	border-radius: 6px;
+	border: none;
+	background: transparent;
+	color: var(--vscode-descriptionForeground);
+	font-size: 12px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+	font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+	white-space: nowrap;
+	line-height: 1;
+}
+
+.vybe-mode-btn:hover {
+	color: var(--vscode-foreground);
+}
+
+.vybe-mode-btn.active {
+	background-color: var(--vscode-sideBar-background);
+	color: var(--vscode-foreground);
+	box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.vybe-mode-btn.active:hover {
+	background-color: var(--vscode-list-hoverBackground);
 }

@@ -29,6 +29,8 @@
 	cursor: pointer;
 	align-items: center;
 	box-sizing: border-box;
+	padding-left: 0px; /* VYBE: No default left padding */
+	padding-right: 0px; /* VYBE: No default right padding */
 }
 
 .monaco-pane-view .pane > .pane-header.not-collapsible {

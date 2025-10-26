@@ -8,7 +8,7 @@ import './media/activityaction.css';
 import { localize, localize2 } from '../../../../nls.js';
 import { ActionsOrientation } from '../../../../base/browser/ui/actionbar/actionbar.js';
 import { Part } from '../../part.js';
-import { ActivityBarPosition, IWorkbenchLayoutService, LayoutSettings, Parts, Position } from '../../../services/layout/browser/layoutService.js';
+import { IWorkbenchLayoutService, Parts, Position } from '../../../services/layout/browser/layoutService.js';
 import { IInstantiationService, ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { DisposableStore, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { ToggleSidebarPositionAction, ToggleSidebarVisibilityAction } from '../../actions/layoutActions.js';
@@ -20,7 +20,7 @@ import { assertReturnsDefined } from '../../../../base/common/types.js';
 import { CustomMenubarControl } from '../titlebar/menubarControl.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { getMenuBarVisibility, MenuSettings } from '../../../../platform/window/common/window.js';
-import { IAction, Separator, SubmenuAction, toAction } from '../../../../base/common/actions.js';
+import { IAction, Separator, toAction } from '../../../../base/common/actions.js';
 import { StandardKeyboardEvent } from '../../../../base/browser/keyboardEvent.js';
 import { KeyCode } from '../../../../base/common/keyCodes.js';
 import { HoverPosition } from '../../../../base/browser/ui/hover/hoverWidget.js';
@@ -29,11 +29,10 @@ import { IPaneCompositePart } from '../paneCompositePart.js';
 import { IPaneCompositeBarOptions, PaneCompositeBar } from '../paneCompositeBar.js';
 import { GlobalCompositeBar } from '../globalCompositeBar.js';
 import { IStorageService } from '../../../../platform/storage/common/storage.js';
-import { Action2, IMenuService, MenuId, MenuRegistry, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { ContextKeyExpr, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
+import { Action2, registerAction2 } from '../../../../platform/actions/common/actions.js';
+import { IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
 import { Categories } from '../../../../platform/action/common/actionCommonCategories.js';
-import { getContextMenuActions } from '../../../../platform/actions/browser/menuEntryActionViewItem.js';
-import { IViewDescriptorService, ViewContainerLocation, ViewContainerLocationToString } from '../../../common/views.js';
+import { IViewDescriptorService, ViewContainerLocation } from '../../../common/views.js';
 import { IExtensionService } from '../../../services/extensions/common/extensions.js';
 import { IWorkbenchEnvironmentService } from '../../../services/environment/common/environmentService.js';
 import { IViewsService } from '../../../services/views/common/viewsService.js';
@@ -41,7 +40,7 @@ import { SwitchCompositeViewAction } from '../compositeBarActions.js';
 
 export class ActivitybarPart extends Part {
 
-	static readonly ACTION_HEIGHT = 48;
+	static readonly ACTION_HEIGHT = 40; // VYBE: Matches icon label height (40px)
 
 	static readonly pinnedViewContainersKey = 'workbench.activity.pinnedViewlets2';
 	static readonly placeholderViewContainersKey = 'workbench.activity.placeholderViewlets';
@@ -49,8 +48,8 @@ export class ActivitybarPart extends Part {
 
 	//#region IView
 
-	readonly minimumWidth: number = 48;
-	readonly maximumWidth: number = 48;
+	readonly minimumWidth: number = 40; // VYBE: Activity Bar width
+	readonly maximumWidth: number = 40; // VYBE: Activity Bar width
 	readonly minimumHeight: number = 0;
 	readonly maximumHeight: number = Number.POSITIVE_INFINITY;
 
@@ -77,14 +76,14 @@ export class ActivitybarPart extends Part {
 			viewContainersWorkspaceStateKey: ActivitybarPart.viewContainersWorkspaceStateKey,
 			orientation: ActionsOrientation.VERTICAL,
 			icon: true,
-			iconSize: 24,
+			iconSize: 20, // VYBE: Icon size (actual size controlled by CSS font-size)
 			activityHoverOptions: {
 				position: () => this.layoutService.getSideBarPosition() === Position.LEFT ? HoverPosition.RIGHT : HoverPosition.LEFT,
 			},
 			preventLoopNavigation: true,
 			recomputeSizes: false,
 			fillExtraContextMenuActions: (actions, e?: MouseEvent | GestureEvent) => { },
-			compositeSize: 52,
+			compositeSize: 40, // VYBE: Match ACTION_HEIGHT (40px)
 			colors: (theme: IColorTheme) => ({
 				activeForegroundColor: theme.getColor(ACTIVITY_BAR_FOREGROUND),
 				inactiveForegroundColor: theme.getColor(ACTIVITY_BAR_INACTIVE_FOREGROUND),
@@ -214,7 +213,6 @@ export class ActivityBarCompositeBar extends PaneCompositeBar {
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IWorkbenchEnvironmentService environmentService: IWorkbenchEnvironmentService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
-		@IMenuService private readonly menuService: IMenuService,
 		@IWorkbenchLayoutService layoutService: IWorkbenchLayoutService,
 	) {
 		super({
@@ -367,10 +365,8 @@ export class ActivityBarCompositeBar extends PaneCompositeBar {
 	}
 
 	getActivityBarContextMenuActions(): IAction[] {
-		const activityBarPositionMenu = this.menuService.getMenuActions(MenuId.ActivityBarPositionMenu, this.contextKeyService, { shouldForwardArgs: true, renderShortTitle: true });
-		const positionActions = getContextMenuActions(activityBarPositionMenu).secondary;
+		// VYBE: Removed Activity Bar Position submenu - Activity Bar is always on the side
 		const actions = [
-			new SubmenuAction('workbench.action.panel.position', localize('activity bar position', "Activity Bar Position"), positionActions),
 			toAction({ id: ToggleSidebarPositionAction.ID, label: ToggleSidebarPositionAction.getLabel(this.layoutService), run: () => this.instantiationService.invokeFunction(accessor => new ToggleSidebarPositionAction().run(accessor)) }),
 		];
 
@@ -383,127 +379,131 @@ export class ActivityBarCompositeBar extends PaneCompositeBar {
 
 }
 
-registerAction2(class extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.activityBarLocation.default',
-			title: {
-				...localize2('positionActivityBarDefault', 'Move Activity Bar to Side'),
-				mnemonicTitle: localize({ key: 'miDefaultActivityBar', comment: ['&& denotes a mnemonic'] }, "&&Default"),
-			},
-			shortTitle: localize('default', "Default"),
-			category: Categories.View,
-			toggled: ContextKeyExpr.equals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.DEFAULT),
-			menu: [{
-				id: MenuId.ActivityBarPositionMenu,
-				order: 1
-			}, {
-				id: MenuId.CommandPalette,
-				when: ContextKeyExpr.notEquals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.DEFAULT),
-			}]
-		});
-	}
-	run(accessor: ServicesAccessor): void {
-		const configurationService = accessor.get(IConfigurationService);
-		configurationService.updateValue(LayoutSettings.ACTIVITY_BAR_LOCATION, ActivityBarPosition.DEFAULT);
-	}
-});
+// VYBE: Activity Bar location action removed - always on side
+// registerAction2(class extends Action2 {
+// 	constructor() {
+// 		super({
+// 			id: 'workbench.action.activityBarLocation.default',
+// 			title: {
+// 				...localize2('positionActivityBarDefault', 'Move Activity Bar to Side'),
+// 				mnemonicTitle: localize({ key: 'miDefaultActivityBar', comment: ['&& denotes a mnemonic'] }, "&&Default"),
+// 			},
+// 			shortTitle: localize('default', "Default"),
+// 			category: Categories.View,
+// 			toggled: ContextKeyExpr.equals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.DEFAULT),
+// 			menu: [{
+// 				id: MenuId.ActivityBarPositionMenu,
+// 				order: 1
+// 			}, {
+// 				id: MenuId.CommandPalette,
+// 				when: ContextKeyExpr.notEquals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.DEFAULT),
+// 			}]
+// 		});
+// 	}
+// 	run(accessor: ServicesAccessor): void {
+// 		const configurationService = accessor.get(IConfigurationService);
+// 		configurationService.updateValue(LayoutSettings.ACTIVITY_BAR_LOCATION, ActivityBarPosition.DEFAULT);
+// 	}
+// });
 
-registerAction2(class extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.activityBarLocation.top',
-			title: {
-				...localize2('positionActivityBarTop', 'Move Activity Bar to Top'),
-				mnemonicTitle: localize({ key: 'miTopActivityBar', comment: ['&& denotes a mnemonic'] }, "&&Top"),
-			},
-			shortTitle: localize('top', "Top"),
-			category: Categories.View,
-			toggled: ContextKeyExpr.equals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.TOP),
-			menu: [{
-				id: MenuId.ActivityBarPositionMenu,
-				order: 2
-			}, {
-				id: MenuId.CommandPalette,
-				when: ContextKeyExpr.notEquals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.TOP),
-			}]
-		});
-	}
-	run(accessor: ServicesAccessor): void {
-		const configurationService = accessor.get(IConfigurationService);
-		configurationService.updateValue(LayoutSettings.ACTIVITY_BAR_LOCATION, ActivityBarPosition.TOP);
-	}
-});
+// VYBE: Activity Bar is always on the side - top and bottom options disabled
+// registerAction2(class extends Action2 {
+// 	constructor() {
+// 		super({
+// 			id: 'workbench.action.activityBarLocation.top',
+// 			title: {
+// 				...localize2('positionActivityBarTop', 'Move Activity Bar to Top'),
+// 				mnemonicTitle: localize({ key: 'miTopActivityBar', comment: ['&& denotes a mnemonic'] }, "&&Top"),
+// 			},
+// 			shortTitle: localize('top', "Top"),
+// 			category: Categories.View,
+// 			toggled: ContextKeyExpr.equals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.TOP),
+// 			menu: [{
+// 				id: MenuId.ActivityBarPositionMenu,
+// 				order: 2
+// 			}, {
+// 				id: MenuId.CommandPalette,
+// 				when: ContextKeyExpr.notEquals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.TOP),
+// 			}]
+// 		});
+// 	}
+// 	run(accessor: ServicesAccessor): void {
+// 		const configurationService = accessor.get(IConfigurationService);
+// 		configurationService.updateValue(LayoutSettings.ACTIVITY_BAR_LOCATION, ActivityBarPosition.TOP);
+// 	}
+// });
 
-registerAction2(class extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.activityBarLocation.bottom',
-			title: {
-				...localize2('positionActivityBarBottom', 'Move Activity Bar to Bottom'),
-				mnemonicTitle: localize({ key: 'miBottomActivityBar', comment: ['&& denotes a mnemonic'] }, "&&Bottom"),
-			},
-			shortTitle: localize('bottom', "Bottom"),
-			category: Categories.View,
-			toggled: ContextKeyExpr.equals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.BOTTOM),
-			menu: [{
-				id: MenuId.ActivityBarPositionMenu,
-				order: 3
-			}, {
-				id: MenuId.CommandPalette,
-				when: ContextKeyExpr.notEquals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.BOTTOM),
-			}]
-		});
-	}
-	run(accessor: ServicesAccessor): void {
-		const configurationService = accessor.get(IConfigurationService);
-		configurationService.updateValue(LayoutSettings.ACTIVITY_BAR_LOCATION, ActivityBarPosition.BOTTOM);
-	}
-});
+// registerAction2(class extends Action2 {
+// 	constructor() {
+// 		super({
+// 			id: 'workbench.action.activityBarLocation.bottom',
+// 			title: {
+// 				...localize2('positionActivityBarBottom', 'Move Activity Bar to Bottom'),
+// 				mnemonicTitle: localize({ key: 'miBottomActivityBar', comment: ['&& denotes a mnemonic'] }, "&&Bottom"),
+// 			},
+// 			shortTitle: localize('bottom', "Bottom"),
+// 			category: Categories.View,
+// 			toggled: ContextKeyExpr.equals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.BOTTOM),
+// 			menu: [{
+// 				id: MenuId.ActivityBarPositionMenu,
+// 				order: 3
+// 			}, {
+// 				id: MenuId.CommandPalette,
+// 				when: ContextKeyExpr.notEquals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.BOTTOM),
+// 			}]
+// 		});
+// 	}
+// 	run(accessor: ServicesAccessor): void {
+// 		const configurationService = accessor.get(IConfigurationService);
+// 		configurationService.updateValue(LayoutSettings.ACTIVITY_BAR_LOCATION, ActivityBarPosition.BOTTOM);
+// 	}
+// });
 
-registerAction2(class extends Action2 {
-	constructor() {
-		super({
-			id: 'workbench.action.activityBarLocation.hide',
-			title: {
-				...localize2('hideActivityBar', 'Hide Activity Bar'),
-				mnemonicTitle: localize({ key: 'miHideActivityBar', comment: ['&& denotes a mnemonic'] }, "&&Hidden"),
-			},
-			shortTitle: localize('hide', "Hidden"),
-			category: Categories.View,
-			toggled: ContextKeyExpr.equals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.HIDDEN),
-			menu: [{
-				id: MenuId.ActivityBarPositionMenu,
-				order: 4
-			}, {
-				id: MenuId.CommandPalette,
-				when: ContextKeyExpr.notEquals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.HIDDEN),
-			}]
-		});
-	}
-	run(accessor: ServicesAccessor): void {
-		const configurationService = accessor.get(IConfigurationService);
-		configurationService.updateValue(LayoutSettings.ACTIVITY_BAR_LOCATION, ActivityBarPosition.HIDDEN);
-	}
-});
+// VYBE: Activity Bar is permanent and non-hideable - hide action disabled
+// registerAction2(class extends Action2 {
+// 	constructor() {
+// 		super({
+// 			id: 'workbench.action.activityBarLocation.hide',
+// 			title: {
+// 				...localize2('hideActivityBar', 'Hide Activity Bar'),
+// 				mnemonicTitle: localize({ key: 'miHideActivityBar', comment: ['&& denotes a mnemonic'] }, "&&Hidden"),
+// 			},
+// 			shortTitle: localize('hide', "Hidden"),
+// 			category: Categories.View,
+// 			toggled: ContextKeyExpr.equals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.HIDDEN),
+// 			menu: [{
+// 				id: MenuId.ActivityBarPositionMenu,
+// 				order: 4
+// 			}, {
+// 				id: MenuId.CommandPalette,
+// 				when: ContextKeyExpr.notEquals(`config.${LayoutSettings.ACTIVITY_BAR_LOCATION}`, ActivityBarPosition.HIDDEN),
+// 			}]
+// 		});
+// 	}
+// 	run(accessor: ServicesAccessor): void {
+// 		const configurationService = accessor.get(IConfigurationService);
+// 		configurationService.updateValue(LayoutSettings.ACTIVITY_BAR_LOCATION, ActivityBarPosition.HIDDEN);
+// 	}
+// });
 
-MenuRegistry.appendMenuItem(MenuId.MenubarAppearanceMenu, {
-	submenu: MenuId.ActivityBarPositionMenu,
-	title: localize('positionActivituBar', "Activity Bar Position"),
-	group: '3_workbench_layout_move',
-	order: 2
-});
+// VYBE: Activity Bar Position menu removed - Activity Bar is always on the side
+// MenuRegistry.appendMenuItem(MenuId.MenubarAppearanceMenu, {
+// 	submenu: MenuId.ActivityBarPositionMenu,
+// 	title: localize('positionActivituBar', "Activity Bar Position"),
+// 	group: '3_workbench_layout_move',
+// 	order: 2
+// });
 
-MenuRegistry.appendMenuItem(MenuId.ViewContainerTitleContext, {
-	submenu: MenuId.ActivityBarPositionMenu,
-	title: localize('positionActivituBar', "Activity Bar Position"),
-	when: ContextKeyExpr.or(
-		ContextKeyExpr.equals('viewContainerLocation', ViewContainerLocationToString(ViewContainerLocation.Sidebar)),
-		ContextKeyExpr.equals('viewContainerLocation', ViewContainerLocationToString(ViewContainerLocation.AuxiliaryBar))
-	),
-	group: '3_workbench_layout_move',
-	order: 1
-});
+// MenuRegistry.appendMenuItem(MenuId.ViewContainerTitleContext, {
+// 	submenu: MenuId.ActivityBarPositionMenu,
+// 	title: localize('positionActivituBar', "Activity Bar Position"),
+// 	when: ContextKeyExpr.or(
+// 		ContextKeyExpr.equals('viewContainerLocation', ViewContainerLocationToString(ViewContainerLocation.Sidebar)),
+// 		ContextKeyExpr.equals('viewContainerLocation', ViewContainerLocationToString(ViewContainerLocation.AuxiliaryBar))
+// 	),
+// 	group: '3_workbench_layout_move',
+// 	order: 1
+// });
 
 registerAction2(class extends SwitchCompositeViewAction {
 	constructor() {

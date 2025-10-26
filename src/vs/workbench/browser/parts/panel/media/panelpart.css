@@ -8,9 +8,20 @@
 	visibility: hidden !important;
 }
 
+/* VYBE: Add gap above and below panel when it's at the bottom */
+.monaco-workbench .part.panel.bottom {
+	margin-top: 4px !important;
+	margin-bottom: 3px !important;
+}
+
+/* VYBE: Remove top margin when panel is maximized/expanded (no editor above) */
+.monaco-workbench.nomaineditorarea .part.panel.bottom {
+	margin-top: 0px !important;
+}
+
 .monaco-workbench .part.panel.bottom .composite.title {
-	border-top-width: 1px;
-	border-top-style: solid;
+	border-top-width: 0; /* VYBE: Remove top border for rounded appearance */
+	border-top-style: none;
 }
 
 .monaco-workbench.nomaineditorarea .part.panel.bottom .composite.title {

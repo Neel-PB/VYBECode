@@ -117,7 +117,7 @@
 
 .monaco-sash.hover:before,
 .monaco-sash.active:before {
-	background: var(--vscode-sash-hoverBorder);
+	background: #3ecf8e; /* VYBE: Custom teal/green color for resize indicators */
 }
 
 .monaco-sash.vertical:before {

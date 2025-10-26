@@ -15,7 +15,7 @@ import { IConfigurationService, IConfigurationChangeEvent } from '../../../../pl
 import { DisposableStore, IDisposable, MutableDisposable } from '../../../../base/common/lifecycle.js';
 import { IBrowserWorkbenchEnvironmentService } from '../../../services/environment/browser/environmentService.js';
 import { IThemeService } from '../../../../platform/theme/common/themeService.js';
-import { TITLE_BAR_ACTIVE_BACKGROUND, TITLE_BAR_ACTIVE_FOREGROUND, TITLE_BAR_INACTIVE_FOREGROUND, TITLE_BAR_INACTIVE_BACKGROUND, TITLE_BAR_BORDER, WORKBENCH_BACKGROUND } from '../../../common/theme.js';
+import { TITLE_BAR_ACTIVE_BACKGROUND, TITLE_BAR_ACTIVE_FOREGROUND, TITLE_BAR_INACTIVE_FOREGROUND, TITLE_BAR_INACTIVE_BACKGROUND, WORKBENCH_BACKGROUND } from '../../../common/theme.js';
 import { isMacintosh, isWindows, isLinux, isWeb, isNative, platformLocale } from '../../../../base/common/platform.js';
 import { Color } from '../../../../base/common/color.js';
 import { EventType, EventHelper, Dimension, append, $, addDisposableListener, prepend, reset, getWindow, getWindowId, isAncestor, getActiveDocument, isHTMLElement } from '../../../../base/browser/dom.js';
@@ -472,6 +472,9 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			this.installMenubar();
 		}
 
+		// VYBE Mode Toggle (add to left content for proper positioning)
+		this.createVybeModeToggle();
+
 		// Title
 		this.title = append(this.centerContent, $('div.window-title'));
 		this.createTitle();
@@ -552,6 +555,34 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		this.updateStyles();
 
 		return this.element;
+	}
+
+	private createVybeModeToggle(): void {
+		// Create mode toggle container
+		const toggleContainer = append(this.leftContent, $('div.vybe-mode-toggle'));
+
+		// IDE button
+		const ideButton = append(toggleContainer, $('button.vybe-mode-btn.active'));
+		ideButton.textContent = 'IDE';
+		ideButton.title = 'Switch to IDE Mode';
+
+		// VIBE button
+		const vibeButton = append(toggleContainer, $('button.vybe-mode-btn'));
+		vibeButton.textContent = 'VIBE';
+		vibeButton.title = 'Switch to Vibe Mode';
+
+		// Click handlers
+		this._register(addDisposableListener(ideButton, EventType.CLICK, () => {
+			ideButton.classList.add('active');
+			vibeButton.classList.remove('active');
+			console.log('VYBE: Switched to IDE mode');
+		}));
+
+		this._register(addDisposableListener(vibeButton, EventType.CLICK, () => {
+			vibeButton.classList.add('active');
+			ideButton.classList.remove('active');
+			console.log('VYBE: Switched to VIBE mode');
+		}));
 	}
 
 	private createTitle(): void {
@@ -778,8 +809,8 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 			const titleForeground = this.getColor(this.isInactive ? TITLE_BAR_INACTIVE_FOREGROUND : TITLE_BAR_ACTIVE_FOREGROUND);
 			this.element.style.color = titleForeground || '';
 
-			const titleBorder = this.getColor(TITLE_BAR_BORDER);
-			this.element.style.borderBottom = titleBorder ? `1px solid ${titleBorder}` : '';
+			// VYBE: Remove title bar border to blend with background
+			this.element.style.borderBottom = '';
 		}
 	}
 

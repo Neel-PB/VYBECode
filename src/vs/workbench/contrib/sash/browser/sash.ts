@@ -37,7 +37,7 @@ export class SashSettingsController extends Disposable implements IWorkbenchCont
 	private onDidChangeSize(): void {
 		const configuredSize = this.configurationService.getValue<number>('workbench.sash.size');
 		const size = clamp(configuredSize, 4, 20);
-		const hoverSize = clamp(configuredSize, 1, 8);
+		const hoverSize = clamp(configuredSize, 4, 20);
 
 		this.styleSheet.textContent = `
 			.monaco-workbench {

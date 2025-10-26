@@ -3,6 +3,11 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+/* VYBE: Align pane header with welcome content - FIX FOUND VIA INSPECTOR! */
+.title-label {
+	padding-left: 0px !important; /* Testing with 0px padding */
+}
+
 /* File icons in trees */
 
 .file-icon-themable-tree.align-icons-and-twisties .monaco-tl-twistie:not(.force-twistie):not(.collapsible),
@@ -27,19 +32,35 @@
 
 .monaco-workbench .tree-explorer-viewlet-tree-view {
 	height: 100%;
+	outline: none !important; /* VYBE: Remove blue focus outline */
+}
+
+.monaco-workbench .tree-explorer-viewlet-tree-view:focus {
+	outline: none !important; /* VYBE: Remove blue focus outline */
+}
+
+.monaco-workbench .part.sidebar:focus,
+.monaco-workbench .part.sidebar:focus-within {
+	outline: none !important; /* VYBE: Remove blue focus outline from sidebar */
 }
 
 .monaco-workbench .tree-explorer-viewlet-tree-view .message {
 	display: flex;
-	padding: 4px 12px 4px 18px;
+	flex-direction: column; /* VYBE: Stack content vertically */
+	padding: 3px 8px 3px 8px; /* VYBE: Match pane header padding (8px) for consistent alignment */
 	user-select: text;
 	-webkit-user-select: text;
+	width: 100%; /* VYBE: Ensure message uses full width */
+	box-sizing: border-box; /* VYBE: Include padding in width calculation */
 }
 
 .monaco-workbench .tree-explorer-viewlet-tree-view .message p {
 	margin-top: 0px;
-	margin-bottom: 0px;
-	padding-bottom: 4px;
+	margin-bottom: 0px !important; /* VYBE: Remove gap between text and buttons */
+	padding-bottom: 0px; /* VYBE: Removed padding to reduce gap */
+	font-size: 10.75px !important; /* VYBE: Increased by 10% (from 9.75px to ~10.75px) */
+	width: 100%; /* VYBE: Use full width */
+	text-align: left; /* VYBE: Left-align text */
 }
 
 .monaco-workbench .tree-explorer-viewlet-tree-view .message ul {
@@ -55,14 +76,34 @@
 }
 
 .monaco-workbench .tree-explorer-viewlet-tree-view .message .button-container {
-	width: 100%;
-	max-width: 300px;
-	margin: auto;
+	display: flex; /* VYBE: Use flex to control button alignment */
+	margin: 0; /* VYBE: Remove auto margin */
+	align-items: stretch; /* VYBE: Allow button to fill height */
+	justify-content: stretch; /* VYBE: Fill full width */
+	width: 100%; /* VYBE: Ensure container uses full width */
 }
 
 .monaco-workbench .tree-explorer-viewlet-tree-view .message .button-container:not(:last-child) {
 	padding-bottom: 8px;
 }
+
+/* VYBE: Style buttons in explorer empty state */
+.monaco-workbench .tree-explorer-viewlet-tree-view .message .button-container > .monaco-button {
+	background-color: #3ecf8e !important; /* VYBE: Teal/green color */
+	color: #ffffff !important; /* VYBE: White text */
+	border: none !important;
+	border-radius: 6px !important;
+	padding: 5px 16px !important; /* VYBE: Reduced height */
+	font-weight: 500 !important;
+	font-size: 12px !important; /* VYBE: Button text size */
+	width: 100%; /* VYBE: Fill full panel width, expand with panel */
+	flex: 1; /* VYBE: Allow button to grow with container */
+}
+
+.monaco-workbench .tree-explorer-viewlet-tree-view .message .button-container > .monaco-button:hover {
+	background-color: #35b87d !important; /* VYBE: Slightly darker on hover */
+}
+
 .monaco-workbench .tree-explorer-viewlet-tree-view .message.hide {
 	display: none;
 }
@@ -83,6 +124,14 @@
 	flex-direction: column;
 }
 
+/* VYBE: Remove all focus outlines from panes */
+.monaco-workbench .pane:focus,
+.monaco-workbench .pane:focus-within,
+.monaco-workbench .pane > .pane-body:focus,
+.monaco-workbench .pane > .pane-body:focus-within {
+	outline: none !important;
+}
+
 .monaco-workbench .pane > .pane-body:not(.welcome) > .welcome-view,
 .monaco-workbench .pane > .pane-body.welcome > :not(.welcome-view) {
 	display: none;
@@ -91,14 +140,18 @@
 .monaco-workbench .pane > .pane-body .welcome-view-content {
 	display: flex;
 	flex-direction: column;
-	padding: 0 20px 1em 20px;
+	padding: 0 8px 0.75em 8px; /* VYBE: Match pane header padding (8px) for consistent alignment */
 	box-sizing: border-box;
-	align-items: center;
+	align-items: stretch; /* VYBE: Allow children to fill full width */
+	width: 100%; /* VYBE: Ensure content uses full panel width */
 }
 
 .monaco-workbench .pane > .pane-body .welcome-view-content > .button-container {
-	width: 100%;
-	max-width: 300px;
+	display: flex; /* VYBE: Control button alignment */
+	justify-content: stretch; /* VYBE: Fill full width */
+	align-items: stretch; /* VYBE: Allow button to fill height */
+	width: 100%; /* VYBE: Ensure container uses full width */
+	margin-block-start: 2px !important; /* VYBE: Minimal gap from text above */
 }
 
 .monaco-workbench.monaco-enable-motion .pane > .pane-body .welcome-view-content > .button-container {
@@ -106,22 +159,59 @@
 }
 
 .monaco-workbench .pane > .pane-body .welcome-view-content.wide > .button-container {
-	max-width: 100%;
+	max-width: none; /* VYBE: No width constraint */
 }
 
 .monaco-workbench .pane > .pane-body .welcome-view-content > .button-container > .monaco-button {
-	max-width: 300px;
+	background-color: #3ecf8e !important; /* VYBE: Teal/green color */
+	color: #ffffff !important; /* VYBE: White text */
+	border: none !important;
+	border-radius: 6px !important; /* VYBE: Rounded corners */
+	padding: 5px 16px !important; /* VYBE: Reduced height */
+	font-weight: 500 !important;
+	font-size: 12px !important; /* VYBE: Button text size */
+	width: 100%; /* VYBE: Fill full panel width, expand with panel */
+	flex: 1; /* VYBE: Allow button to grow with container */
+}
+
+.monaco-workbench .pane > .pane-body .welcome-view-content > .button-container > .monaco-button:hover {
+	background-color: #35b87d !important; /* VYBE: Slightly darker on hover */
+}
+
+.monaco-workbench .pane > .pane-body .welcome-view-content > .button-container > .monaco-button:focus,
+.monaco-workbench .pane > .pane-body .welcome-view-content > .button-container > .monaco-button:active {
+	outline: none !important; /* VYBE: Remove blue focus outline */
+	border: none !important; /* VYBE: Remove blue focus border */
+}
+
+/* VYBE: Remove ALL blue outlines/borders from Explorer panel */
+.monaco-workbench .part.sidebar *:focus,
+.monaco-workbench .part.sidebar *:focus-visible,
+.monaco-workbench .part.sidebar .monaco-button:focus,
+.monaco-workbench .pane-body *:focus,
+.monaco-workbench .pane-body *:focus-visible,
+.monaco-workbench .monaco-pane-view *:focus,
+.monaco-workbench .monaco-pane-view *:focus-visible {
+	outline: none !important;
+	border-color: transparent !important;
+	box-shadow: none !important;
 }
 
 .monaco-workbench .pane > .pane-body .welcome-view-content > p {
 	width: 100%;
+	font-size: 10.75px !important; /* VYBE: Increased by 10% (from 9.75px to ~10.75px) */
+	margin-bottom: 1px !important; /* VYBE: Minimal gap between text and buttons */
+	text-align: left; /* VYBE: Ensure text is left-aligned */
+	margin-left: 0; /* VYBE: Remove any left margin */
+	margin-right: 0; /* VYBE: Remove any right margin */
 }
 
 .monaco-workbench .pane > .pane-body .welcome-view-content > * {
 	margin-block-start: 1em;
 	margin-block-end: 0;
-	margin-inline-start: 0px;
-	margin-inline-end: 0px;
+	margin-inline-start: 0px !important; /* VYBE: Force no inline margin */
+	margin-inline-end: 0px !important; /* VYBE: Force no inline margin */
+	width: 100%; /* VYBE: All children use full width */
 }
 
 .monaco-workbench .pane > .pane-body .welcome-view-content > p .codicon[class*='codicon-'] {
@@ -328,3 +418,4 @@
 	color: var(--vscode-inputOption-activeForeground);
 	background-color: var(--vscode-inputOption-activeBackground);
 }
+
