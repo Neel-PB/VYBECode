@@ -14,9 +14,6 @@ import minimist from 'minimist';
 import { product } from './bootstrap-meta.js';
 import { parse } from './vs/base/common/jsonc.js';
 import { getUserDataPath } from './vs/platform/environment/node/userDataPath.js';
-
-console.log('[VYBE DEBUG] main.ts - product keys loaded:', Object.keys(product as any));
-console.log('[VYBE DEBUG] main.ts - product.extensionsGallery:', (product as any).extensionsGallery);
 import * as perf from './vs/base/common/performance.js';
 import { resolveNLSConfiguration } from './vs/base/node/nls.js';
 import { getUNCHost, addUNCHostToAllowlist } from './vs/base/node/unc.js';

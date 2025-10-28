@@ -194,10 +194,7 @@ export class DesktopMain extends Disposable {
 		serviceCollection.set(IMainProcessService, mainProcessService);
 
 		// Product
-		console.log('[VYBE DEBUG] desktop.main - product object keys:', Object.keys(product));
-		console.log('[VYBE DEBUG] desktop.main - product.extensionsGallery:', product.extensionsGallery);
 		const productService: IProductService = { _serviceBrand: undefined, ...product };
-		console.log('[VYBE DEBUG] desktop.main - productService.extensionsGallery:', productService.extensionsGallery);
 		serviceCollection.set(IProductService, productService);
 
 		// Environment

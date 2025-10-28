@@ -1473,13 +1473,6 @@ export class WindowsMainService extends Disposable implements IWindowsMainServic
 		}
 
 		// Build up the window configuration from provided options, config and environment
-		const fs = require('fs');
-		const debugLog = `[VYBE DEBUG] windowsMainService - product keys: ${Object.keys(product).length}\n` +
-			`[VYBE DEBUG] windowsMainService - has extensionsGallery: ${!!product.extensionsGallery}\n` +
-			`[VYBE DEBUG] windowsMainService - extensionsGallery: ${JSON.stringify(product.extensionsGallery, null, 2)}\n`;
-		console.log(debugLog);
-		fs.appendFileSync('/tmp/vybe-main-debug.log', debugLog);
-
 		const configuration: INativeWindowConfiguration = {
 
 			// Inherit CLI arguments from environment and/or

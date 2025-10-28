@@ -54,8 +54,6 @@ export class WorkbenchExtensionGalleryManifestService extends ExtensionGalleryMa
 		@IDialogService private readonly dialogService: IDialogService,
 		@IHostService private readonly hostService: IHostService,
 	) {
-		console.log('[VYBE DEBUG] WorkbenchExtensionGalleryManifestService constructor - productService:', productService);
-		console.log('[VYBE DEBUG] productService.extensionsGallery:', productService.extensionsGallery);
 		super(productService);
 		this.commonHeadersPromise = resolveMarketplaceHeaders(
 			productService.version,
@@ -87,22 +85,16 @@ export class WorkbenchExtensionGalleryManifestService extends ExtensionGalleryMa
 
 	private async doGetExtensionGalleryManifest(): Promise<void> {
 		const defaultServiceUrl = this.productService.extensionsGallery?.serviceUrl;
-		console.log('[VYBE DEBUG] Extension gallery serviceUrl:', defaultServiceUrl);
 		if (!defaultServiceUrl) {
-			console.error('[VYBE DEBUG] No serviceUrl found in product.json!');
 			return;
 		}
 
 		const configuredServiceUrl = this.configurationService.getValue<string>(ExtensionGalleryServiceUrlConfigKey);
-		console.log('[VYBE DEBUG] Configured serviceUrl:', configuredServiceUrl);
 		if (configuredServiceUrl) {
-			console.log('[VYBE DEBUG] Using enterprise gallery');
 			await this.handleDefaultAccountAccess(configuredServiceUrl);
 			this._register(this.defaultAccountService.onDidChangeDefaultAccount(() => this.handleDefaultAccountAccess(configuredServiceUrl)));
 		} else {
-			console.log('[VYBE DEBUG] Using default marketplace, getting manifest...');
 			const defaultExtensionGalleryManifest = await super.getExtensionGalleryManifest();
-			console.log('[VYBE DEBUG] Manifest received:', defaultExtensionGalleryManifest ? 'YES' : 'NO');
 			this.update(defaultExtensionGalleryManifest);
 		}
 
@@ -135,14 +127,11 @@ export class WorkbenchExtensionGalleryManifestService extends ExtensionGalleryMa
 	}
 
 	private update(manifest: IExtensionGalleryManifest | null, status?: ExtensionGalleryManifestStatus): void {
-		console.log('[VYBE DEBUG] update() called with manifest:', manifest ? 'YES' : 'NO', 'status:', status);
 		if (this.extensionGalleryManifest !== manifest) {
 			this.extensionGalleryManifest = manifest;
 			this._onDidChangeExtensionGalleryManifest.fire(manifest);
 		}
-		const finalStatus = status ?? (this.extensionGalleryManifest ? ExtensionGalleryManifestStatus.Available : ExtensionGalleryManifestStatus.Unavailable);
-		console.log('[VYBE DEBUG] Final status being set:', finalStatus);
-		this.updateStatus(finalStatus);
+		this.updateStatus(status ?? (this.extensionGalleryManifest ? ExtensionGalleryManifestStatus.Available : ExtensionGalleryManifestStatus.Unavailable));
 	}
 
 	private updateStatus(status: ExtensionGalleryManifestStatus): void {
