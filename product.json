@@ -40,7 +40,8 @@
 		"resourceUrlTemplate": "https://{publisher}.gallery.vsassets.io/_apis/public/gallery/publisher/{publisher}/extension/{name}/{version}/assetbyname/{asset}",
 		"controlUrl": "https://az764295.vo.msecnd.net/extensions/marketplace.json",
 		"recommendationsUrl": "https://az764295.vo.msecnd.net/extensions/workspaceRecommendations.json.gz",
-		"nlsBaseUrl": "https://www.vscode-unpkg.net/_lp/"
+		"nlsBaseUrl": "https://www.vscode-unpkg.net/_lp/",
+		"extensionUrlTemplate": "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/{publisher}/vsextensions/{name}/{version}/vspackage"
 	},
 	"builtInExtensions": [
 		{
