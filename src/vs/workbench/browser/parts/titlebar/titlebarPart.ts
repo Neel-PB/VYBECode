@@ -566,9 +566,9 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		ideButton.textContent = 'IDE';
 		ideButton.title = 'Switch to IDE Mode';
 
-		// VIBE button
+		// VYBE button
 		const vibeButton = append(toggleContainer, $('button.vybe-mode-btn'));
-		vibeButton.textContent = 'VIBE';
+		vibeButton.textContent = 'VYBE';
 		vibeButton.title = 'Switch to Vibe Mode';
 
 		// Click handlers
@@ -581,7 +581,7 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		this._register(addDisposableListener(vibeButton, EventType.CLICK, () => {
 			vibeButton.classList.add('active');
 			ideButton.classList.remove('active');
-			console.log('VYBE: Switched to VIBE mode');
+			console.log('VYBE: Switched to VYBE mode');
 		}));
 	}
 

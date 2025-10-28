@@ -49,26 +49,33 @@
 	height: calc(100% - 70px);
 }
 
+/* VYBE: Use custom VYBE logo for watermark (full opacity, no fading) */
 .monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark > .letterpress {
 	width: 100%;
 	max-height: 100%;
 	aspect-ratio: 1/1;
-	background-image: url('./letterpress-light.svg');
+	background-image: url('./vybe-watermark.svg');
 	background-size: contain;
 	background-position-x: center;
 	background-repeat: no-repeat;
+	opacity: 1; /* VYBE: Full brightness, no fade */
+	pointer-events: none; /* VYBE: Disable clicking to prevent welcome page */
 }
 
+/* VYBE: Same logo for all themes at full opacity */
 .monaco-workbench.vs-dark .part.editor > .content .editor-group-container .editor-group-watermark > .letterpress {
-	background-image: url('./letterpress-dark.svg');
+	background-image: url('./vybe-watermark.svg');
+	opacity: 1;
 }
 
 .monaco-workbench.hc-light .part.editor > .content .editor-group-container .editor-group-watermark > .letterpress {
-	background-image: url('./letterpress-hcLight.svg');
+	background-image: url('./vybe-watermark.svg');
+	opacity: 1;
 }
 
 .monaco-workbench.hc-black .part.editor > .content .editor-group-container .editor-group-watermark > .letterpress {
-	background-image: url('./letterpress-hcDark.svg');
+	background-image: url('./vybe-watermark.svg');
+	opacity: 1;
 }
 
 .monaco-workbench .part.editor > .content:not(.empty) .editor-group-container > .editor-group-watermark > .shortcuts,
@@ -103,6 +110,71 @@
 .monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark > .shortcuts dd {
 	display: table-cell;
 	vertical-align: middle;
+}
+
+/* VYBE: Action buttons for empty state (no folder open) */
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark > .shortcuts > .watermark-box.vybe-empty-state {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	align-items: center;
+	max-width: 400px; /* Match approximate logo watermark width */
+}
+
+/* VYBE: Recent Projects heading */
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark > .shortcuts .vybe-recent-heading {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--vscode-foreground);
+	margin-top: 20px;
+	margin-bottom: 10px;
+	text-align: center;
+	opacity: 0.8;
+	width: 100%;
+}
+
+/* VYBE: Recent project items */
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark > .shortcuts .vybe-recent-item {
+	font-size: 13px;
+	color: var(--vscode-foreground);
+	opacity: 0.7;
+	text-align: center;
+	cursor: pointer;
+	padding: 4px 8px;
+	border-radius: 4px;
+	transition: all 0.15s ease;
+	width: 100%;
+}
+
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark > .shortcuts .vybe-recent-item:hover {
+	opacity: 1;
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+/* VYBE: Action buttons - wider and shorter */
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark > .shortcuts button.vybe-action-button {
+	padding: 8px 32px; /* Reduced height from 12px to 8px (~33% reduction) */
+	font-size: 13px;
+	font-weight: 500;
+	border-radius: 6px;
+	border: 1px solid var(--vscode-button-border, transparent);
+	background-color: var(--vscode-button-background);
+	color: var(--vscode-button-foreground);
+	cursor: pointer;
+	transition: all 0.2s ease;
+	min-width: 300px; /* Increased width to match logo */
+	width: 100%;
+	text-align: center;
+}
+
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark > .shortcuts button.vybe-action-button:hover {
+	background-color: var(--vscode-button-hoverBackground);
+	transform: translateY(-1px);
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.monaco-workbench .part.editor > .content .editor-group-container > .editor-group-watermark > .shortcuts button.vybe-action-button:active {
+	transform: translateY(0);
 }
 
 /* Title */

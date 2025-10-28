@@ -3,12 +3,13 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { $, append, clearNode, h } from '../../../../base/browser/dom.js';
+import { $, addDisposableListener, append, clearNode, h } from '../../../../base/browser/dom.js';
 import { KeybindingLabel } from '../../../../base/browser/ui/keybindingLabel/keybindingLabel.js';
 import { coalesce, shuffle } from '../../../../base/common/arrays.js';
 import { Disposable, DisposableStore } from '../../../../base/common/lifecycle.js';
 import { isMacintosh, isWeb, OS } from '../../../../base/common/platform.js';
 import { localize } from '../../../../nls.js';
+import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { IConfigurationService } from '../../../../platform/configuration/common/configuration.js';
 import { ContextKeyExpr, ContextKeyExpression, IContextKeyService } from '../../../../platform/contextkey/common/contextkey.js';
@@ -17,6 +18,8 @@ import { IStorageService, StorageScope, StorageTarget, WillSaveStateReason } fro
 import { defaultKeybindingLabelStyles } from '../../../../platform/theme/browser/defaultStyles.js';
 import { editorForeground, registerColor, transparent } from '../../../../platform/theme/common/colorRegistry.js';
 import { IWorkspaceContextService, WorkbenchState } from '../../../../platform/workspace/common/workspace.js';
+import { IWorkspacesService } from '../../../../platform/workspaces/common/workspaces.js';
+import { ILabelService } from '../../../../platform/label/common/label.js';
 
 interface WatermarkEntry {
 	readonly id: string;
@@ -41,31 +44,24 @@ const openSettings: WatermarkEntry = { text: localize('watermark.openSettings', 
 
 const showChat = ContextKeyExpr.and(ContextKeyExpr.equals('chatSetupHidden', false), ContextKeyExpr.equals('chatSetupDisabled', false));
 const openChat: WatermarkEntry = { text: localize('watermark.openChat', "Open Chat"), id: 'workbench.action.chat.open', when: { native: showChat, web: showChat } };
+const cloneRepository: WatermarkEntry = { text: localize('watermark.cloneRepository', "Clone Repository"), id: 'git.clone' };
+const connectRemote: WatermarkEntry = { text: localize('watermark.connectRemote', "Connect to Remote"), id: 'workbench.action.remote.showMenu' };
 
+// VYBE: Custom empty state buttons (no folder open)
 const emptyWindowEntries: WatermarkEntry[] = coalesce([
-	showCommands,
-	...(isMacintosh && !isWeb ? [openFileOrFolder] : [openFile, openFolder]),
-	openRecent,
-	isMacintosh && !isWeb ? newUntitledFile : undefined, // fill in one more on macOS to get to 5 entries
-	openChat
+	openFolder,
+	cloneRepository,
+	!isWeb ? connectRemote : undefined
 ]);
 
 const randomEmptyWindowEntries: WatermarkEntry[] = [
 	/* Nothing yet */
 ];
 
-const workspaceEntries: WatermarkEntry[] = [
-	showCommands,
-	gotoFile,
-	openChat
-];
+// VYBE: Show blank editor when folder is open (no watermark shortcuts)
+const workspaceEntries: WatermarkEntry[] = [];
 
-const randomWorkspaceEntries: WatermarkEntry[] = [
-	findInFiles,
-	startDebugging,
-	toggleTerminal,
-	openSettings,
-];
+const randomWorkspaceEntries: WatermarkEntry[] = [];
 
 export class EditorGroupWatermark extends Disposable {
 
@@ -86,7 +82,10 @@ export class EditorGroupWatermark extends Disposable {
 		@IWorkspaceContextService private readonly contextService: IWorkspaceContextService,
 		@IContextKeyService private readonly contextKeyService: IContextKeyService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
-		@IStorageService private readonly storageService: IStorageService
+		@IStorageService private readonly storageService: IStorageService,
+		@ICommandService private readonly commandService: ICommandService,
+		@IWorkspacesService private readonly workspacesService: IWorkspacesService,
+		@ILabelService private readonly labelService: ILabelService
 	) {
 		super();
 
@@ -145,35 +144,55 @@ export class EditorGroupWatermark extends Disposable {
 			return;
 		}
 
-		const fixedEntries = this.filterEntries(this.workbenchState !== WorkbenchState.EMPTY ? workspaceEntries : emptyWindowEntries, false /* not shuffled */);
-		const randomEntries = this.filterEntries(this.workbenchState !== WorkbenchState.EMPTY ? randomWorkspaceEntries : randomEmptyWindowEntries, true /* shuffled */).slice(0, Math.max(0, 5 - fixedEntries.length));
-		const entries = [...fixedEntries, ...randomEntries];
+		// VYBE: Show blank when folder is open, show action buttons when no folder
+		if (this.workbenchState !== WorkbenchState.EMPTY) {
+			// Folder is open - show blank
+			return;
+		}
 
-		const box = append(this.shortcuts, $('.watermark-box'));
+		// No folder is open - show action buttons
+		const box = append(this.shortcuts, $('.watermark-box.vybe-empty-state'));
 
-		const update = () => {
+		const update = async () => {
 			clearNode(box);
 			this.keybindingLabels.clear();
 
-			for (const entry of entries) {
-				const keys = this.keybindingService.lookupKeybinding(entry.id);
-				if (!keys) {
-					continue;
-				}
+			// VYBE: Render three action buttons (always show all three)
+			const buttons = [
+				{ text: 'Open Folder', id: 'workbench.action.files.openFolder' },
+				{ text: 'Clone Repository', id: 'git.clone' },
+				{ text: 'Connect to Remote', id: 'workbench.action.remote.showMenu' }
+			];
 
-				const dl = append(box, $('dl'));
-				const dt = append(dl, $('dt'));
-				dt.textContent = entry.text;
+			for (const btn of buttons) {
+				const button = append(box, $('button.vybe-action-button'));
+				button.textContent = btn.text;
 
-				const dd = append(dl, $('dd'));
+				this.transientDisposables.add(addDisposableListener(button, 'click', () => {
+					this.commandService.executeCommand(btn.id);
+				}));
+			}
 
-				const label = this.keybindingLabels.add(new KeybindingLabel(dd, OS, { renderUnboundKeybindings: true, ...defaultKeybindingLabelStyles }));
-				label.set(keys);
+			// VYBE: Add "Recent Projects" heading
+			const recentHeading = append(box, $('.vybe-recent-heading'));
+			recentHeading.textContent = 'Recent Projects';
+
+			// VYBE: Fetch and display actual recent workspaces
+			const recents = await this.workspacesService.getRecentlyOpened();
+			const recentWorkspaces = recents.workspaces.slice(0, 3); // Show top 3 recent workspaces
+
+			for (const workspace of recentWorkspaces) {
+				const label = 'label' in workspace ? workspace.label : this.labelService.getWorkspaceLabel(workspace.workspace, { verbose: false });
+				const recentItem = append(box, $('.vybe-recent-item'));
+				recentItem.textContent = label || 'Untitled';
+
+				this.transientDisposables.add(addDisposableListener(recentItem, 'click', () => {
+					this.commandService.executeCommand('workbench.action.openRecent');
+				}));
 			}
 		};
 
 		update();
-		this.transientDisposables.add(this.keybindingService.onDidUpdateKeybindings(update));
 	}
 
 	private filterEntries(entries: WatermarkEntry[], shuffleEntries: boolean): WatermarkEntry[] {

@@ -223,14 +223,38 @@
 	background-color: var(--vscode-statusBarItem-prominentHoverBackground) !important;
 }
 
-.monaco-workbench .part.statusbar > .items-container > .statusbar-item.remote-kind {
-	color: var(--vscode-statusBarItem-remoteForeground);
-	background-color: var(--vscode-statusBarItem-remoteBackground);
+/* VYBE: Remote indicator (first left item) matches activity bar width and uses VYBE green */
+.monaco-workbench .part.statusbar > .left-items > .statusbar-item.left.first-visible-item {
+	color: #FFFFFF !important; /* White text for contrast */
+	background-color: #3ecf8e !important; /* VYBE green */
+	width: 40px !important; /* Match activity bar width */
+	min-width: 40px !important;
+	max-width: 40px !important;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0 !important;
 }
 
-.monaco-workbench .part.statusbar > .items-container > .statusbar-item.remote-kind a:hover:not(.disabled) {
-	color: var(--vscode-statusBarItem-remoteHoverForeground);
-	background-color: var(--vscode-statusBarItem-remoteHoverBackground) !important;
+.monaco-workbench .part.statusbar > .left-items > .statusbar-item.left.first-visible-item > .statusbar-item-label {
+	margin: 0 !important;
+	padding: 0 !important;
+	width: 40px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: #FFFFFF !important;
+}
+
+.monaco-workbench .part.statusbar > .left-items > .statusbar-item.left.first-visible-item a:hover:not(.disabled) {
+	color: #FFFFFF !important;
+	background-color: #35b87d !important; /* Darker green on hover */
+}
+
+/* VYBE: Also style remote-kind specifically for when remote is connected */
+.monaco-workbench .part.statusbar > .items-container > .statusbar-item.remote-kind {
+	color: #FFFFFF; /* White text for contrast */
+	background-color: #3ecf8e !important; /* VYBE green */
 }
 
 .monaco-workbench .part.statusbar > .items-container > .statusbar-item.offline-kind {

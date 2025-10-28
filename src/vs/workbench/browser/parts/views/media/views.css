@@ -151,7 +151,7 @@
 	justify-content: stretch; /* VYBE: Fill full width */
 	align-items: stretch; /* VYBE: Allow button to fill height */
 	width: 100%; /* VYBE: Ensure container uses full width */
-	margin-block-start: 2px !important; /* VYBE: Minimal gap from text above */
+	margin-block-start: 8px !important; /* VYBE: Gap between buttons (increased by 6px) */
 }
 
 .monaco-workbench.monaco-enable-motion .pane > .pane-body .welcome-view-content > .button-container {
