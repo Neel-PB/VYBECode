@@ -30,9 +30,12 @@ if (process.env['ELECTRON_RUN_AS_NODE'] || process.versions['electron']) {
 }
 
 // Prepare globals that are needed for running
+console.log('[VYBE DEBUG] bootstrap-esm - product keys:', Object.keys(product));
+console.log('[VYBE DEBUG] bootstrap-esm - product.extensionsGallery:', product.extensionsGallery);
 globalThis._VSCODE_PRODUCT_JSON = { ...product };
 globalThis._VSCODE_PACKAGE_JSON = { ...pkg };
 globalThis._VSCODE_FILE_ROOT = import.meta.dirname;
+console.log('[VYBE DEBUG] bootstrap-esm - globalThis._VSCODE_PRODUCT_JSON.extensionsGallery:', globalThis._VSCODE_PRODUCT_JSON.extensionsGallery);
 
 //#region NLS helpers
 

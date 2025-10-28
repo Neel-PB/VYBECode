@@ -54,6 +54,8 @@ export class WorkbenchExtensionGalleryManifestService extends ExtensionGalleryMa
 		@IDialogService private readonly dialogService: IDialogService,
 		@IHostService private readonly hostService: IHostService,
 	) {
+		console.log('[VYBE DEBUG] WorkbenchExtensionGalleryManifestService constructor - productService:', productService);
+		console.log('[VYBE DEBUG] productService.extensionsGallery:', productService.extensionsGallery);
 		super(productService);
 		this.commonHeadersPromise = resolveMarketplaceHeaders(
 			productService.version,
