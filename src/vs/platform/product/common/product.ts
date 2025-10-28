@@ -20,7 +20,7 @@ if (typeof vscodeGlobal !== 'undefined' && typeof vscodeGlobal.context !== 'unde
 	const configuration: ISandboxConfiguration | undefined = vscodeGlobal.context.configuration();
 	if (configuration) {
 		product = configuration.product;
-		
+
 		// VYBE FIX: extensionsGallery is missing from sandbox config, inject it manually
 		if (!(product as any).extensionsGallery) {
 			(product as any).extensionsGallery = {

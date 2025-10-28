@@ -407,6 +407,13 @@
 	color: inherit;
 }
 
+/* VYBE: Layout control toggle buttons - use green for active/toggled state */
+.monaco-workbench .part.titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container .monaco-action-bar .action-item.checked .codicon,
+.monaco-workbench .part.titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container .monaco-action-bar .action-item.toggled .codicon,
+.monaco-workbench .part.titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container .monaco-action-bar .action-item.active .codicon {
+	color: #3ecf8e !important; /* VYBE green for active panels */
+}
+
 .monaco-workbench .part.titlebar > .titlebar-container > .titlebar-right > .action-toolbar-container .monaco-action-bar .action-item {
 	display: flex;
 }
