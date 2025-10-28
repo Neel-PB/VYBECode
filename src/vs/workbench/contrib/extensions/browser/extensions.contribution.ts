@@ -571,8 +571,11 @@ class ExtensionsContributions extends Disposable implements IWorkbenchContributi
 	}
 
 	private async updateExtensionGalleryStatusContexts(): Promise<void> {
-		CONTEXT_HAS_GALLERY.bindTo(this.contextKeyService).set(this.extensionGalleryManifestService.extensionGalleryManifestStatus === ExtensionGalleryManifestStatus.Available);
-		CONTEXT_EXTENSIONS_GALLERY_STATUS.bindTo(this.contextKeyService).set(this.extensionGalleryManifestService.extensionGalleryManifestStatus);
+		const status = this.extensionGalleryManifestService.extensionGalleryManifestStatus;
+		const hasGallery = status === ExtensionGalleryManifestStatus.Available;
+		console.log('[VYBE DEBUG] updateExtensionGalleryStatusContexts - Status:', status, 'HasGallery:', hasGallery);
+		CONTEXT_HAS_GALLERY.bindTo(this.contextKeyService).set(hasGallery);
+		CONTEXT_EXTENSIONS_GALLERY_STATUS.bindTo(this.contextKeyService).set(status);
 	}
 
 	private async updateGalleryCapabilitiesContexts(extensionGalleryManifest: IExtensionGalleryManifest | null): Promise<void> {
