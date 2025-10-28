@@ -32,6 +32,8 @@
 	"reportIssueUrl": "https://github.com/yourusername/vybe/issues/new",
 	"nodejsRepository": "https://nodejs.org",
 	"urlProtocol": "vybe",
+	"commit": "vybe-dev",
+	"date": "2025-10-28",
 	"webviewContentExternalBaseUrlTemplate": "https://{{uuid}}.vscode-cdn.net/insider/ef65ac1ba57f57f2a3961bfe94aa20481caca4c6/out/vs/workbench/contrib/webview/browser/pre/",
 	"extensionsGallery": {
 		"serviceUrl": "https://marketplace.visualstudio.com/_apis/public/gallery",
