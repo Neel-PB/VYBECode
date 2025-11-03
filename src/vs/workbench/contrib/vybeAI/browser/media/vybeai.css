@@ -1,0 +1,235 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+.vybe-ai-pane {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	width: 100%;
+	overflow: hidden;
+}
+
+.vybe-ai-content {
+	flex: 1;
+	overflow: auto;
+	padding: 0;
+	height: 100%;
+	width: 100%;
+}
+
+/* Empty State Styling */
+.vybe-ai-empty-state {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	height: 100%;
+	padding: 20px;
+	text-align: center;
+}
+
+.vybe-ai-logo h1 {
+	font-size: 48px;
+	margin: 0;
+	margin-bottom: 20px;
+	font-weight: 300;
+}
+
+.vybe-ai-message {
+	max-width: 400px;
+}
+
+.vybe-ai-message p {
+	margin: 8px 0;
+	line-height: 1.5;
+}
+
+/* Custom scrollbar for VYBE AI content */
+.vybe-ai-content::-webkit-scrollbar {
+	width: 10px;
+}
+
+.vybe-ai-content::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.vybe-ai-content::-webkit-scrollbar-thumb {
+	background: var(--vscode-scrollbarSlider-background);
+	border-radius: 5px;
+}
+
+.vybe-ai-content::-webkit-scrollbar-thumb:hover {
+	background: var(--vscode-scrollbarSlider-hoverBackground);
+}
+
+/* Custom Title Bar Styles */
+
+.vybe-ai-custom-titlebar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	height: 30px;
+	width: 100%;
+	background-color: var(--vscode-sideBar-background);
+	border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.vybe-titlebar-tabs-section {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+}
+
+.vybe-titlebar-actions {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 0 8px;
+	flex-shrink: 0;
+}
+
+.vybe-titlebar-action {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	border-radius: 4px;
+	cursor: pointer;
+	color: var(--vscode-icon-foreground);
+	background: transparent;
+	border: none;
+	outline: none;
+	transition: background-color 0.1s;
+}
+
+.vybe-titlebar-action:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.vybe-titlebar-action:active {
+	background-color: var(--vscode-toolbar-activeBackground);
+}
+
+.vybe-titlebar-separator {
+	width: 1px;
+	height: 18px;
+	background-color: var(--vscode-panel-border);
+	margin: 0 4px;
+}
+
+/* Tab Styles */
+.composite-bar-action-tab {
+	position: relative;
+	display: flex;
+	align-items: center;
+	height: 30px;
+	padding: 0 12px;
+	cursor: pointer;
+	user-select: none;
+	border-bottom: 2px solid transparent;
+}
+
+.composite-bar-action-tab:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.composite-bar-action-tab.checked {
+	border-bottom-color: var(--vscode-panelTitle-activeBorder, var(--vscode-focusBorder));
+}
+
+.composite-bar-action-tab .status-indicator {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	margin-right: 6px;
+	opacity: 0;
+}
+
+.composite-bar-action-tab .status-indicator.unread {
+	opacity: 1;
+	background-color: var(--vscode-activityBarBadge-background);
+}
+
+.composite-bar-action-tab .action-label {
+	font-size: 12px;
+	line-height: 30px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 150px;
+	text-decoration: none;
+}
+
+.composite-bar-action-tab .remove-button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	border-radius: 3px;
+	font-size: 12px;
+	transition: opacity 0.15s, background-color 0.1s;
+}
+
+.composite-bar-action-tab .remove-button:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+}
+
+.composite-bar-action-tab .active-item-indicator {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	height: 2px;
+	background-color: var(--vscode-panelTitle-activeBorder, var(--vscode-focusBorder));
+}
+
+/* History Dropdown Styles */
+
+.vybe-history-dropdown {
+	font-size: 12px;
+	color: var(--vscode-dropdown-foreground);
+}
+
+.vybe-history-search-input::placeholder {
+	opacity: 0.5;
+}
+
+.vybe-history-date-header {
+	font-weight: 500;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+}
+
+.vybe-history-item:hover {
+	background-color: var(--vscode-list-hoverBackground);
+}
+
+.vybe-history-item-icon .codicon {
+	color: var(--vscode-icon-foreground);
+}
+
+.vybe-history-item-title {
+	color: var(--vscode-foreground);
+}
+
+.vybe-history-current-label {
+	color: var(--vscode-descriptionForeground);
+}
+
+.vybe-history-action-btn {
+	color: var(--vscode-icon-foreground);
+}
+
+.vybe-history-action-btn:hover {
+	background-color: var(--vscode-toolbar-hoverBackground);
+	border-radius: 3px;
+}
+
+.vybe-history-empty {
+	color: var(--vscode-descriptionForeground);
+}
+

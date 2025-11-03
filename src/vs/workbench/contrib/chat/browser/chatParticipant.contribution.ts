@@ -33,48 +33,53 @@ import { ChatViewId } from './chat.js';
 import { CHAT_SIDEBAR_PANEL_ID, ChatViewPane } from './chatViewPane.js';
 
 // --- Chat Container &  View Registration
+// VYBE: DISABLED - Using VYBE AI instead
 
-const chatViewContainer: ViewContainer = Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContainersRegistry).registerViewContainer({
-	id: CHAT_SIDEBAR_PANEL_ID,
-	title: localize2('chat.viewContainer.label', "Chat"),
-	icon: Codicon.chatSparkle,
-	ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [CHAT_SIDEBAR_PANEL_ID, { mergeViewWithContainerWhenSingleView: true }]),
-	storageId: CHAT_SIDEBAR_PANEL_ID,
-	hideIfEmpty: true,
-	order: 1,
-}, ViewContainerLocation.AuxiliaryBar, { isDefault: true, doNotRegisterOpenCommand: true });
+const ENABLE_NATIVE_CHAT = false; // Set to false to disable native chat panel
 
-const chatViewDescriptor: IViewDescriptor = {
-	id: ChatViewId,
-	containerIcon: chatViewContainer.icon,
-	containerTitle: chatViewContainer.title.value,
-	singleViewPaneContainerTitle: chatViewContainer.title.value,
-	name: localize2('chat.viewContainer.label', "Chat"),
-	canToggleVisibility: false,
-	canMoveView: true,
-	openCommandActionDescriptor: {
+if (ENABLE_NATIVE_CHAT) {
+	const chatViewContainer: ViewContainer = Registry.as<IViewContainersRegistry>(ViewExtensions.ViewContainersRegistry).registerViewContainer({
 		id: CHAT_SIDEBAR_PANEL_ID,
-		title: chatViewContainer.title,
-		mnemonicTitle: localize({ key: 'miToggleChat', comment: ['&& denotes a mnemonic'] }, "&&Chat"),
-		keybindings: {
-			primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KeyI,
-			mac: {
-				primary: KeyMod.CtrlCmd | KeyMod.WinCtrl | KeyCode.KeyI
-			}
+		title: localize2('chat.viewContainer.label', "Chat"),
+		icon: Codicon.chatSparkle,
+		ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [CHAT_SIDEBAR_PANEL_ID, { mergeViewWithContainerWhenSingleView: true }]),
+		storageId: CHAT_SIDEBAR_PANEL_ID,
+		hideIfEmpty: true,
+		order: 1,
+	}, ViewContainerLocation.AuxiliaryBar, { isDefault: true, doNotRegisterOpenCommand: true });
+
+	const chatViewDescriptor: IViewDescriptor = {
+		id: ChatViewId,
+		containerIcon: chatViewContainer.icon,
+		containerTitle: chatViewContainer.title.value,
+		singleViewPaneContainerTitle: chatViewContainer.title.value,
+		name: localize2('chat.viewContainer.label', "Chat"),
+		canToggleVisibility: false,
+		canMoveView: true,
+		openCommandActionDescriptor: {
+			id: CHAT_SIDEBAR_PANEL_ID,
+			title: chatViewContainer.title,
+			mnemonicTitle: localize({ key: 'miToggleChat', comment: ['&& denotes a mnemonic'] }, "&&Chat"),
+			keybindings: {
+				primary: KeyMod.CtrlCmd | KeyMod.Alt | KeyCode.KeyI,
+				mac: {
+					primary: KeyMod.CtrlCmd | KeyMod.WinCtrl | KeyCode.KeyI
+				}
+			},
+			order: 1
 		},
-		order: 1
-	},
-	ctorDescriptor: new SyncDescriptor(ChatViewPane, [{ location: ChatAgentLocation.Chat }]),
-	when: ContextKeyExpr.or(
-		ContextKeyExpr.or(
-			ChatContextKeys.Setup.hidden,
-			ChatContextKeys.Setup.disabled
-		)?.negate(),
-		ChatContextKeys.panelParticipantRegistered,
-		ChatContextKeys.extensionInvalid
-	)
-};
-Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry).registerViews([chatViewDescriptor], chatViewContainer);
+		ctorDescriptor: new SyncDescriptor(ChatViewPane, [{ location: ChatAgentLocation.Chat }]),
+		when: ContextKeyExpr.or(
+			ContextKeyExpr.or(
+				ChatContextKeys.Setup.hidden,
+				ChatContextKeys.Setup.disabled
+			)?.negate(),
+			ChatContextKeys.panelParticipantRegistered,
+			ChatContextKeys.extensionInvalid
+		)
+	};
+	Registry.as<IViewsRegistry>(ViewExtensions.ViewsRegistry).registerViews([chatViewDescriptor], chatViewContainer);
+}
 
 const chatParticipantExtensionPoint = extensionsRegistry.ExtensionsRegistry.registerExtensionPoint<IRawChatParticipantContribution[]>({
 	extensionPoint: 'chatParticipants',
