@@ -576,6 +576,19 @@ export class VybeAiPaneWithCustomTitle extends ViewPane {
 			}),
 		);
 
+		// Add spin animation CSS if not already added
+		if (!document.getElementById("vybe-ai-spin-animation")) {
+			const style = document.createElement("style");
+			style.id = "vybe-ai-spin-animation";
+			style.textContent = `
+				@keyframes spin {
+					from { transform: rotate(0deg); }
+					to { transform: rotate(360deg); }
+				}
+			`;
+			document.head.appendChild(style);
+		}
+
 		// Empty state removed - composer is always visible
 		// this.renderEmptyState();
 	}
@@ -4200,13 +4213,15 @@ export class VybeAiPaneWithCustomTitle extends ViewPane {
 		messageHeader.appendChild(messageBox);
 		page.appendChild(messageHeader);
 
-		// AI response area (scrollable within page, initially empty)
-		const aiResponseArea = $(".vybe-ai-response-area");
-		aiResponseArea.setAttribute("data-response-for", message.id);
-		aiResponseArea.style.flex = "1"; // Take remaining space
-		aiResponseArea.style.overflow = "auto"; // Scrollable for long AI responses
-		aiResponseArea.style.padding = "0 10px 16px 10px";
-		page.appendChild(aiResponseArea);
+	// AI response area (scrollable within page, initially empty)
+	// Equal padding on both sides
+	const aiResponseArea = $(".vybe-ai-response-area");
+	aiResponseArea.setAttribute("data-response-for", message.id);
+	aiResponseArea.style.flex = "1"; // Take remaining space
+	aiResponseArea.style.overflow = "auto"; // Scrollable for long AI responses
+	aiResponseArea.style.padding = "0 18px 16px 18px"; // Equal horizontal padding
+	aiResponseArea.style.boxSizing = "border-box";
+	page.appendChild(aiResponseArea);
 
 		return page;
 	}
@@ -4235,6 +4250,1729 @@ export class VybeAiPaneWithCustomTitle extends ViewPane {
 		});
 	}
 
+	/**
+	 * Render a code block component with Monaco diff editor
+	 * Supports loading state (spinner + filename only) and full state (all elements)
+	 */
+	private renderCodeBlock(
+		filename: string,
+		language: string = "",
+		additions: number = 0,
+		deletions: number = 0,
+		isApplied: boolean = false,
+		isLoading: boolean = false, // NEW: Loading state shows only spinner + filename
+	): HTMLElement {
+		const isDarkTheme = this.isDarkTheme();
+
+	// Main container - needs position: relative for absolute expand bar
+	const codeBlockContainer = $(".composer-code-block-container");
+	codeBlockContainer.classList.add("composer-message-codeblock");
+	codeBlockContainer.style.borderRadius = "8px";
+	codeBlockContainer.style.border = isDarkTheme
+		? "0.5px solid rgba(128, 128, 128, 0.25)"
+		: "0.5px solid rgba(0, 0, 0, 0.15)";
+	codeBlockContainer.style.overflow = "hidden";
+	codeBlockContainer.style.backgroundColor = "var(--vscode-editor-background)";
+	codeBlockContainer.style.position = "relative"; // For absolute positioning of expand bar
+
+	// Header - compact single-line layout
+	const header = $(".composer-code-block-header");
+	header.style.background = isDarkTheme ? "#1e1f21" : "#f8f8f9"; // Composer background
+	header.style.display = "flex";
+	header.style.justifyContent = "space-between";
+	header.style.alignItems = "center";
+	header.style.padding = "4px 8px";
+	header.style.height = "28px";
+	header.style.boxSizing = "border-box";
+	header.style.gap = "8px";
+
+	// Left side: Spinner (loading) OR Badge (full) + filename
+	const fileInfo = $(".composer-code-block-file-info");
+	fileInfo.style.display = "flex";
+	fileInfo.style.alignItems = "center";
+	fileInfo.style.gap = "6px";
+	fileInfo.style.flex = "1";
+	fileInfo.style.minWidth = "0";
+	fileInfo.style.overflow = "hidden";
+
+	if (isLoading) {
+		// Loading state: Show spinner
+		const spinner = $(".codicon.codicon-loading.codicon-modifier-spin");
+		spinner.style.fontSize = "14px";
+		spinner.style.color = "var(--vscode-foreground)";
+		spinner.style.opacity = "0.8";
+		spinner.style.flexShrink = "0";
+		fileInfo.appendChild(spinner);
+	} else {
+		// Full state: Show file type badge
+		const typeBadge = $("div");
+		typeBadge.textContent = language.toUpperCase().substring(0, 2);
+		typeBadge.style.fontSize = "10px";
+		typeBadge.style.fontWeight = "600";
+		typeBadge.style.color = "var(--vscode-foreground)";
+		typeBadge.style.padding = "2px 4px";
+		typeBadge.style.borderRadius = "3px";
+		typeBadge.style.backgroundColor = "color-mix(in srgb, var(--vscode-button-background) 30%, transparent)";
+		typeBadge.style.flexShrink = "0";
+		fileInfo.appendChild(typeBadge);
+	}
+
+	// Filename (always shown)
+	const filenameText = $("span");
+	filenameText.textContent = filename;
+	filenameText.style.fontSize = "12px";
+	filenameText.style.color = "var(--vscode-foreground)";
+	filenameText.style.whiteSpace = "nowrap";
+	filenameText.style.overflow = "hidden";
+	filenameText.style.textOverflow = "ellipsis";
+	filenameText.style.flex = "1";
+	filenameText.style.minWidth = "0";
+	fileInfo.appendChild(filenameText);
+
+	// Content area (Monaco diff editor) - defined early for toggle functionality
+	const contentArea = $(".composer-code-block-content");
+	contentArea.style.display = "none";
+	contentArea.setAttribute("data-expanded", "false");
+	contentArea.style.paddingBottom = "16px"; // Bottom padding for spacing
+	contentArea.style.transition = "height 0.2s ease-in-out";
+
+	// Diff block container
+	const diffBlock = $("div");
+	diffBlock.style.boxSizing = "border-box";
+	diffBlock.style.position = "relative";
+	diffBlock.style.background = "var(--vscode-editor-background)";
+	diffBlock.style.overflow = "hidden";
+	diffBlock.style.height = "0px";
+	diffBlock.style.transition = "height 0.2s ease-in-out";
+
+	// Right side: Changes + buttons (ONLY shown when NOT loading)
+	const actionsContainer = $("div");
+	actionsContainer.style.display = isLoading ? "none" : "flex"; // Hide in loading state
+	actionsContainer.style.alignItems = "center";
+	actionsContainer.style.gap = "8px";
+	actionsContainer.style.flexShrink = "0";
+
+	if (!isLoading) {
+		// +/- changes display (only in full state)
+		const changesDisplay = $("div");
+		changesDisplay.style.display = "flex";
+		changesDisplay.style.alignItems = "center";
+		changesDisplay.style.gap = "4px";
+		changesDisplay.style.fontSize = "11px";
+		changesDisplay.style.fontVariantNumeric = "tabular-nums";
+
+		if (additions > 0) {
+			const addSpan = $("span");
+			addSpan.textContent = `+${additions}`;
+			addSpan.style.color = "var(--vscode-gitDecoration-addedResourceForeground, #22863a)";
+			addSpan.style.fontWeight = "500";
+			changesDisplay.appendChild(addSpan);
+		}
+
+		if (deletions > 0) {
+			const delSpan = $("span");
+			delSpan.textContent = `-${deletions}`;
+			delSpan.style.color = "var(--vscode-gitDecoration-deletedResourceForeground, #cb2431)";
+			delSpan.style.fontWeight = "500";
+			changesDisplay.appendChild(delSpan);
+		}
+
+		actionsContainer.appendChild(changesDisplay);
+	}
+
+	// Action buttons (only in full state, not loading)
+	let chevronButton: HTMLElement | null = null;
+	let chevronIcon: HTMLElement | null = null;
+
+	if (!isLoading) {
+		// Helper to create compact action button
+		const createActionButton = (
+			iconClass: string,
+			iconSize: string,
+			onClick?: () => void,
+		) => {
+			const button = $("div");
+			button.style.display = "flex";
+			button.style.alignItems = "center";
+			button.style.justifyContent = "center";
+			button.style.height = "20px";
+			button.style.width = "20px";
+			button.style.cursor = "pointer";
+			button.style.borderRadius = "3px";
+			button.style.transition = "background 0.1s";
+			button.style.flexShrink = "0";
+
+			const icon = $(`.codicon.${iconClass}`);
+			icon.style.fontSize = iconSize;
+			icon.style.color = "var(--vscode-foreground)";
+			icon.style.opacity = "0.8";
+
+			button.appendChild(icon);
+
+			// Hover effect
+			this._register(
+				addDisposableListener(button, "mouseenter", () => {
+					button.style.background = "var(--vscode-toolbar-hoverBackground)";
+					icon.style.opacity = "1";
+				}),
+			);
+			this._register(
+				addDisposableListener(button, "mouseleave", () => {
+					button.style.background = "transparent";
+					icon.style.opacity = "0.8";
+				}),
+			);
+
+			if (onClick) {
+				this._register(addDisposableListener(button, "click", onClick));
+			}
+
+			return button;
+		};
+
+		// Code editor button (</>)
+		const codeButton = createActionButton("codicon-code", "14px", () => {
+			// TODO: Open file in editor
+			console.log("Open in editor:", filename);
+		});
+		actionsContainer.appendChild(codeButton);
+
+		// Copy button
+		const copyButton = createActionButton("codicon-copy", "12px", () => {
+			// TODO: Implement copy functionality
+			console.log("Copy code");
+		});
+		actionsContainer.appendChild(copyButton);
+
+		// Chevron expand/collapse button (in header)
+		chevronButton = $("div");
+		chevronButton.style.display = "flex";
+		chevronButton.style.alignItems = "center";
+		chevronButton.style.justifyContent = "center";
+		chevronButton.style.height = "20px";
+		chevronButton.style.width = "20px";
+		chevronButton.style.cursor = "pointer";
+		chevronButton.style.borderRadius = "3px";
+		chevronButton.style.transition = "background 0.1s";
+		chevronButton.style.flexShrink = "0";
+
+		chevronIcon = $(".codicon.codicon-chevron-down");
+		chevronIcon.style.fontSize = "12px";
+		chevronIcon.style.color = "var(--vscode-foreground)";
+		chevronIcon.style.opacity = "0.8";
+		chevronButton.appendChild(chevronIcon);
+
+		// Chevron hover effect
+		this._register(
+			addDisposableListener(chevronButton, "mouseenter", () => {
+				if (chevronButton) {
+					chevronButton.style.background = "var(--vscode-toolbar-hoverBackground)";
+				}
+				if (chevronIcon) {
+					chevronIcon.style.opacity = "1";
+				}
+			}),
+		);
+		this._register(
+			addDisposableListener(chevronButton, "mouseleave", () => {
+				if (chevronButton) {
+					chevronButton.style.background = "transparent";
+				}
+				if (chevronIcon) {
+					chevronIcon.style.opacity = "0.8";
+				}
+			}),
+		);
+
+		// Add chevron button to actions container
+		actionsContainer.appendChild(chevronButton);
+	}
+
+	// Chevron toggle functionality will be registered after INITIAL_HEIGHT is defined
+
+	header.appendChild(fileInfo);
+	header.appendChild(actionsContainer);
+
+	// Separator line between header and content (not shown in loading state)
+	const headerSeparator = $("div");
+	headerSeparator.style.height = "1px";
+	headerSeparator.style.background = isDarkTheme
+		? "rgba(128, 128, 128, 0.2)"
+		: "rgba(0, 0, 0, 0.1)";
+	headerSeparator.style.width = "100%";
+	headerSeparator.style.display = "none"; // Hidden by default
+	headerSeparator.setAttribute("data-header-separator", "true");
+
+	// If loading, don't render diff content at all
+	if (isLoading) {
+		// Just return header only for loading state
+		codeBlockContainer.appendChild(header);
+		return codeBlockContainer;
+	}
+
+	// Monaco-style diff editor container
+	const diffEditorContainer = $("div");
+	diffEditorContainer.classList.add("composer-diff-block");
+	diffEditorContainer.style.boxSizing = "border-box";
+	diffEditorContainer.style.position = "relative";
+	diffEditorContainer.style.background = "var(--vscode-editor-background)";
+	diffEditorContainer.style.overflow = "hidden";
+	diffEditorContainer.style.fontFamily = 'Menlo, Monaco, "Courier New", monospace';
+	diffEditorContainer.style.fontSize = "12px";
+	diffEditorContainer.style.lineHeight = "18px";
+	const INITIAL_LINE_LIMIT = 9; // Show max 9 lines initially
+	const LINE_HEIGHT = 18; // Monaco default line height
+	const INITIAL_HEIGHT = INITIAL_LINE_LIMIT * LINE_HEIGHT; // 162px
+	diffEditorContainer.style.height = `${INITIAL_HEIGHT}px`;
+	diffEditorContainer.style.transition = "height 0.2s ease-in-out";
+	diffEditorContainer.style.marginBottom = "0"; // No margin, expand bar is separate
+
+	// Chevron toggle handler will be registered later after expandMoreButton is created
+
+	// Sample diff data (original and modified lines)
+	const diffLines = [
+		{ type: 'context', content: '            "scope": [', indent: 12 },
+		{ type: 'delete', content: '                "meta.property-name", "support.type.property-name"', indent: 16 },
+		{ type: 'insert', content: '                "meta.property-name",', indent: 16 },
+		{ type: 'insert', content: '                "support.type.property-name",', indent: 16 },
+		{ type: 'insert', content: '                "variable.other.property",', indent: 16 },
+		{ type: 'insert', content: '                "variable.other.object.property",', indent: 16 },
+		{ type: 'insert', content: '                "meta.object-literal.key",', indent: 16 },
+		{ type: 'insert', content: '                "meta.object.member",', indent: 16 },
+		{ type: 'insert', content: '                "entity.name.tag.yaml",', indent: 16 },
+		{ type: 'insert', content: '                "support.type.property-name.css",', indent: 16 },
+		{ type: 'insert', content: '                "support.type.property-name.scss"', indent: 16 },
+		{ type: 'context', content: '            ],', indent: 12 },
+		{ type: 'context', content: '            "settings": {', indent: 12 },
+		{ type: 'context', content: '                "foreground": "#79B8FF"', indent: 16 },
+		{ type: 'context', content: '            }', indent: 12 }
+	];
+
+	const totalLines = diffLines.length;
+	const hasMoreLines = totalLines > INITIAL_LINE_LIMIT;
+
+	console.log('[VYBE AI] Code block - totalLines:', totalLines, 'hasMoreLines:', hasMoreLines);
+
+	// Render diff lines
+	const linesContainer = $("div");
+	linesContainer.style.padding = "8px 12px";
+	linesContainer.style.background = "var(--vscode-editor-background)";
+
+	diffLines.forEach((line, index) => {
+		// Only show first INITIAL_LINE_LIMIT lines initially
+		if (index >= INITIAL_LINE_LIMIT) {
+			return; // Will be shown when expanded
+		}
+
+		const lineDiv = $("div");
+		lineDiv.style.minHeight = "18px";
+		lineDiv.style.lineHeight = "18px";
+		lineDiv.style.whiteSpace = "pre";
+		lineDiv.style.fontFamily = 'Menlo, Monaco, "Courier New", monospace';
+		lineDiv.style.fontSize = "12px";
+		lineDiv.setAttribute("data-line-index", index.toString());
+
+		// Add gutter indicator
+		const gutter = $("span");
+		gutter.style.display = "inline-block";
+		gutter.style.width = "20px";
+		gutter.style.textAlign = "center";
+		gutter.style.marginRight = "8px";
+		gutter.style.opacity = "0.6";
+		gutter.style.userSelect = "none";
+
+		if (line.type === 'insert') {
+			gutter.textContent = "+";
+			gutter.style.color = "var(--vscode-gitDecoration-addedResourceForeground, #22863a)";
+			lineDiv.style.background = isDarkTheme
+				? "rgba(46, 160, 67, 0.2)"
+				: "rgba(34, 134, 58, 0.1)";
+		} else if (line.type === 'delete') {
+			gutter.textContent = "-";
+			gutter.style.color = "var(--vscode-gitDecoration-deletedResourceForeground, #cb2431)";
+			lineDiv.style.background = isDarkTheme
+				? "rgba(248, 81, 73, 0.2)"
+				: "rgba(203, 36, 49, 0.1)";
+		} else {
+			gutter.textContent = " ";
+		}
+
+		lineDiv.appendChild(gutter);
+
+		// Add code content with syntax coloring
+		const code = $("span");
+		code.textContent = line.content;
+		code.style.color = "var(--vscode-editor-foreground)";
+		if (line.type === 'context') {
+			code.style.opacity = "0.7";
+		}
+		lineDiv.appendChild(code);
+
+		linesContainer.appendChild(lineDiv);
+	});
+
+	// Store expand state
+	let isFullyExpanded = false;
+
+	diffEditorContainer.appendChild(linesContainer);
+	diffBlock.appendChild(diffEditorContainer);
+	contentArea.appendChild(diffBlock);
+
+	// Add 10px full-width expand/collapse bar at bottom - SIBLING of contentArea
+	let expandMoreButton: HTMLElement | null = null;
+	let expandChevron: HTMLElement | null = null;
+	if (hasMoreLines) {
+		console.log('[VYBE AI] Creating expand bar - hasMoreLines:', hasMoreLines);
+		expandMoreButton = $("div");
+		expandMoreButton.classList.add("composer-message-codeblock-expand");
+		expandMoreButton.style.position = "absolute"; // Absolute positioned at bottom
+		expandMoreButton.style.bottom = "0";
+		expandMoreButton.style.left = "0";
+		expandMoreButton.style.width = "100%";
+		expandMoreButton.style.height = "10px";
+		expandMoreButton.style.display = "none"; // Start hidden
+		expandMoreButton.style.cursor = "pointer";
+		expandMoreButton.style.background = isDarkTheme ? "#1e1f21" : "#f8f8f9"; // Composer background
+		expandMoreButton.style.alignItems = "center";
+		expandMoreButton.style.justifyContent = "center";
+		expandMoreButton.style.borderTop = isDarkTheme
+			? "0.5px solid rgba(128, 128, 128, 0.2)"
+			: "0.5px solid rgba(0, 0, 0, 0.1)";
+		expandMoreButton.style.zIndex = "1";
+
+		expandChevron = $(".codicon.codicon-chevron-down");
+		expandChevron.style.fontSize = "10px";
+		expandChevron.style.color = "var(--vscode-foreground)";
+		expandChevron.style.opacity = "0.6";
+		expandMoreButton.appendChild(expandChevron);
+
+		console.log('[VYBE AI] Expand bar created, display:', expandMoreButton.style.display);
+
+		// Expand more handler - toggle between limited and full view
+		this._register(addDisposableListener(expandMoreButton, "click", () => {
+			console.log('[VYBE AI] Expand bar clicked! isFullyExpanded:', isFullyExpanded);
+			if (!isFullyExpanded) {
+				console.log('[VYBE AI] Expanding to show all', totalLines, 'lines');
+				// EXPAND: Render remaining lines
+				diffLines.forEach((line, index) => {
+					if (index < INITIAL_LINE_LIMIT) {
+						return; // Already rendered
+					}
+
+					const lineDiv = $("div");
+					lineDiv.style.minHeight = "18px";
+					lineDiv.style.lineHeight = "18px";
+					lineDiv.style.whiteSpace = "pre";
+					lineDiv.style.fontFamily = 'Menlo, Monaco, "Courier New", monospace';
+					lineDiv.style.fontSize = "12px";
+					lineDiv.setAttribute("data-line-index", index.toString());
+
+					// Add gutter indicator
+					const gutter = $("span");
+					gutter.style.display = "inline-block";
+					gutter.style.width = "20px";
+					gutter.style.textAlign = "center";
+					gutter.style.marginRight = "8px";
+					gutter.style.opacity = "0.6";
+					gutter.style.userSelect = "none";
+
+					if (line.type === 'insert') {
+						gutter.textContent = "+";
+						gutter.style.color = "var(--vscode-gitDecoration-addedResourceForeground, #22863a)";
+						lineDiv.style.background = isDarkTheme
+							? "rgba(46, 160, 67, 0.2)"
+							: "rgba(34, 134, 58, 0.1)";
+					} else if (line.type === 'delete') {
+						gutter.textContent = "-";
+						gutter.style.color = "var(--vscode-gitDecoration-deletedResourceForeground, #cb2431)";
+						lineDiv.style.background = isDarkTheme
+							? "rgba(248, 81, 73, 0.2)"
+							: "rgba(203, 36, 49, 0.1)";
+					} else {
+						gutter.textContent = " ";
+					}
+
+					lineDiv.appendChild(gutter);
+
+					// Add code content
+					const code = $("span");
+					code.textContent = line.content;
+					code.style.color = "var(--vscode-editor-foreground)";
+					if (line.type === 'context') {
+						code.style.opacity = "0.7";
+					}
+					lineDiv.appendChild(code);
+
+					linesContainer.appendChild(lineDiv);
+				});
+
+				// Expand container height to show all lines
+				const fullHeight = (totalLines * LINE_HEIGHT) + 16; // Add padding
+				console.log('[VYBE AI] Setting diffEditorContainer height to:', fullHeight);
+				diffEditorContainer.style.height = `${fullHeight}px`;
+				diffBlock.style.height = `${fullHeight}px`; // Also expand parent diffBlock
+				if (expandChevron) {
+					expandChevron.className = "codicon codicon-chevron-up"; // Change to up
+				}
+				isFullyExpanded = true;
+				console.log('[VYBE AI] Expansion complete, isFullyExpanded:', isFullyExpanded);
+			} else {
+				// COLLAPSE: Remove extra lines and reset to initial view
+				console.log('[VYBE AI] Collapsing back to', INITIAL_LINE_LIMIT, 'lines');
+				const lineDivs = linesContainer.querySelectorAll('[data-line-index]');
+				lineDivs.forEach((lineDiv, index) => {
+					if (index >= INITIAL_LINE_LIMIT) {
+						lineDiv.remove();
+					}
+				});
+				diffEditorContainer.style.height = `${INITIAL_HEIGHT}px`;
+				diffBlock.style.height = `${INITIAL_HEIGHT}px`; // Also reset parent diffBlock
+				if (expandChevron) {
+					expandChevron.className = "codicon codicon-chevron-down"; // Change to down
+				}
+				isFullyExpanded = false;
+				console.log('[VYBE AI] Collapse complete');
+			}
+		}));
+
+		// Chevron toggle handler - handles both expand/collapse AND expand bar visibility
+		if (chevronButton && chevronIcon) {
+			this._register(addDisposableListener(chevronButton, "click", () => {
+				const isExpanded = contentArea.getAttribute("data-expanded") === "true";
+				console.log('[VYBE AI] Chevron clicked - isExpanded:', isExpanded, 'hasMoreLines:', hasMoreLines);
+
+				if (isExpanded) {
+					// COLLAPSE code block
+					contentArea.style.display = "none";
+					contentArea.setAttribute("data-expanded", "false");
+					chevronIcon!.className = "codicon codicon-chevron-down";
+					diffBlock.style.height = "0px";
+					headerSeparator.style.display = "none";
+
+					// Hide expand bar
+					if (expandMoreButton) {
+						console.log('[VYBE AI] Hiding expand bar');
+						expandMoreButton.style.display = "none";
+					}
+
+					// Reset to initial state if fully expanded
+					if (isFullyExpanded && expandChevron) {
+						const lineDivs = linesContainer.querySelectorAll('[data-line-index]');
+						lineDivs.forEach((lineDiv, index) => {
+							if (index >= INITIAL_LINE_LIMIT) {
+								lineDiv.remove();
+							}
+						});
+						diffEditorContainer.style.height = `${INITIAL_HEIGHT}px`;
+						expandChevron.className = "codicon codicon-chevron-down";
+						isFullyExpanded = false;
+					}
+				} else {
+					// EXPAND code block
+					contentArea.style.display = "block";
+					contentArea.setAttribute("data-expanded", "true");
+					chevronIcon!.className = "codicon codicon-chevron-up";
+					diffBlock.style.height = `${INITIAL_HEIGHT}px`;
+					headerSeparator.style.display = "block";
+
+					// Show expand bar after transition
+					if (expandMoreButton) {
+						setTimeout(() => {
+							if (expandMoreButton) {
+								console.log('[VYBE AI] Showing expand bar');
+								expandMoreButton.style.display = "flex";
+							}
+						}, 200);
+					}
+				}
+			}));
+		}
+	} else {
+		// No expand bar needed - just register basic toggle
+		if (chevronButton && chevronIcon) {
+			this._register(addDisposableListener(chevronButton, "click", () => {
+				const isExpanded = contentArea.getAttribute("data-expanded") === "true";
+				if (isExpanded) {
+					contentArea.style.display = "none";
+					contentArea.setAttribute("data-expanded", "false");
+					chevronIcon!.className = "codicon codicon-chevron-down";
+					diffBlock.style.height = "0px";
+					headerSeparator.style.display = "none";
+				} else {
+					contentArea.style.display = "block";
+					contentArea.setAttribute("data-expanded", "true");
+					chevronIcon!.className = "codicon codicon-chevron-up";
+					diffBlock.style.height = `${INITIAL_HEIGHT}px`;
+					headerSeparator.style.display = "block";
+				}
+			}));
+		}
+	}
+
+	// Assemble
+	codeBlockContainer.appendChild(header);
+	codeBlockContainer.appendChild(headerSeparator);
+	codeBlockContainer.appendChild(contentArea);
+	// Add expand bar as sibling (outside contentArea)
+	if (expandMoreButton) {
+		console.log('[VYBE AI] Appending expand bar to codeBlockContainer');
+		codeBlockContainer.appendChild(expandMoreButton);
+	} else {
+		console.log('[VYBE AI] No expand bar - hasMoreLines:', hasMoreLines);
+	}
+
+		return codeBlockContainer;
+	}
+
+	/**
+	 * Render a thought/thinking/reasoning block with streaming support
+	 * Starts as "Thinking" while streaming, then collapses and becomes "Thought for Xs"
+	 */
+	private renderThoughtBlock(
+		label: string = "Thinking",
+		durationSeconds: number = 0,
+		content: string = "",
+		isStreaming: boolean = true
+	): HTMLElement {
+		const isDarkTheme = this.isDarkTheme();
+
+		// Main container
+		const thoughtContainer = $(".vybe-ai-thought-container");
+		thoughtContainer.style.display = "block";
+		thoughtContainer.style.outline = "none";
+		thoughtContainer.style.padding = "0px 2px";
+		thoughtContainer.style.margin = "4px 0px";
+		thoughtContainer.style.backgroundColor = "transparent";
+
+		// Collapsible wrapper
+		const collapsibleWrapper = $(".vybe-ai-thought-collapsible");
+		collapsibleWrapper.style.display = "flex";
+		collapsibleWrapper.style.flexDirection = "column";
+		collapsibleWrapper.style.gap = "2px";
+		collapsibleWrapper.style.margin = "0";
+
+		// Header row (clickable)
+		const headerRow = $(".vybe-ai-thought-header");
+		headerRow.style.display = "flex";
+		headerRow.style.flexDirection = "row";
+		headerRow.style.alignItems = "center";
+		headerRow.style.gap = "4px";
+		headerRow.style.cursor = "pointer";
+		headerRow.style.width = "100%";
+		headerRow.style.maxWidth = "100%";
+		headerRow.style.boxSizing = "border-box";
+		headerRow.style.overflow = "hidden";
+
+		// Header content (label + duration)
+		const headerContent = $("div");
+		headerContent.style.display = "flex";
+		headerContent.style.gap = "4px";
+		headerContent.style.overflow = "hidden";
+		headerContent.style.flex = "1";
+		headerContent.style.minWidth = "0";
+
+		const headerText = $("div");
+		headerText.style.flex = "1";
+		headerText.style.minWidth = "0";
+		headerText.style.display = "flex";
+		headerText.style.alignItems = "center";
+		headerText.style.overflow = "hidden";
+		headerText.style.gap = "4px";
+		headerText.style.color = "var(--vscode-foreground)";
+		headerText.style.transition = "opacity 0.1s ease-in";
+		headerText.style.fontSize = "12px";
+
+		// Inner text wrapper
+		const textWrapper = $("span");
+		textWrapper.style.flex = "1";
+		textWrapper.style.minWidth = "0";
+		textWrapper.style.overflow = "hidden";
+
+		const textContent = $("div");
+		textContent.style.display = "flex";
+		textContent.style.alignItems = "center";
+		textContent.style.overflow = "hidden";
+
+		// Label (e.g., "Thought")
+		const labelSpan = $("span");
+		labelSpan.textContent = label;
+		labelSpan.style.color = isDarkTheme
+			? "rgba(204, 204, 204, 0.7)"
+			: "rgba(102, 102, 102, 0.7)";
+		labelSpan.style.whiteSpace = "nowrap";
+		labelSpan.style.flexShrink = "0";
+
+		// Duration (e.g., "for 4s")
+		const durationSpan = $("span");
+		durationSpan.textContent = durationSeconds > 0 ? `for ${durationSeconds}s` : "";
+		durationSpan.style.color = isDarkTheme
+			? "rgba(153, 153, 153, 0.6)"
+			: "rgba(128, 128, 128, 0.6)";
+		durationSpan.style.marginLeft = "4px";
+		durationSpan.style.whiteSpace = "nowrap";
+
+		textContent.appendChild(labelSpan);
+		if (durationSeconds > 0) {
+			textContent.appendChild(durationSpan);
+		}
+		textWrapper.appendChild(textContent);
+		headerText.appendChild(textWrapper);
+
+		// Chevron icon
+		const chevronIcon = $(".codicon.codicon-chevron-right");
+		chevronIcon.style.color = "var(--vscode-foreground)";
+		chevronIcon.style.width = "15px";
+		chevronIcon.style.height = "17px";
+		chevronIcon.style.display = "flex";
+		chevronIcon.style.justifyContent = "flex-start";
+		chevronIcon.style.alignItems = "center";
+		chevronIcon.style.transformOrigin = "45% 55%";
+		chevronIcon.style.transition = "transform 0.1s, opacity 0.1s ease-in, color 0.1s ease-in";
+		chevronIcon.style.lineHeight = "16px";
+		chevronIcon.style.flexShrink = "0";
+		chevronIcon.style.cursor = "pointer";
+		chevronIcon.style.opacity = "1";
+		chevronIcon.style.fontSize = "12px";
+		// Start rotated down if streaming/expanded
+		chevronIcon.style.transform = isStreaming ? "rotate(90deg)" : "rotate(0deg)";
+
+		headerText.appendChild(chevronIcon);
+		headerContent.appendChild(headerText);
+		headerRow.appendChild(headerContent);
+
+		// Content area (collapsible)
+		const contentArea = $(".vybe-ai-thought-content");
+		contentArea.style.paddingLeft = "0px";
+		contentArea.style.marginLeft = "0px";
+		// Start EXPANDED if streaming, COLLAPSED if not
+		contentArea.style.display = isStreaming ? "block" : "none";
+		contentArea.setAttribute("data-expanded", isStreaming ? "true" : "false");
+
+		// Scrollable wrapper
+		const scrollWrapper = $("div");
+		scrollWrapper.style.position = "relative";
+		scrollWrapper.style.overflow = "hidden";
+		scrollWrapper.style.height = isStreaming ? "220px" : "0px"; // Animate this directly
+		scrollWrapper.style.maxHeight = "220px";
+		scrollWrapper.style.transition = "height 0.2s ease-in-out";
+
+		// Scrollable content
+		const scrollableDiv = $("div");
+		scrollableDiv.classList.add("scrollable-div-container");
+		scrollableDiv.style.height = "100%";
+		scrollableDiv.style.overflow = "auto"; // Enable scrolling if content exceeds max height
+
+		// Content wrapper
+		const contentWrapper = $("div");
+		contentWrapper.style.width = "100%";
+		contentWrapper.style.overflow = "hidden";
+		contentWrapper.style.height = "100%";
+
+		// Thought text content
+		const thoughtText = $("div");
+		thoughtText.classList.add("vybe-ai-thought-text");
+		thoughtText.textContent = content;
+		thoughtText.style.whiteSpace = "pre-wrap";
+		thoughtText.style.wordBreak = "break-word";
+		thoughtText.style.opacity = "0.6";
+		thoughtText.style.fontSize = "12px";
+		thoughtText.style.display = "flex";
+		thoughtText.style.paddingLeft = "0px";
+		thoughtText.style.color = "var(--vscode-foreground)";
+		thoughtText.style.userSelect = "text";
+		thoughtText.style.padding = "8px";
+
+		contentWrapper.appendChild(thoughtText);
+		scrollableDiv.appendChild(contentWrapper);
+		scrollWrapper.appendChild(scrollableDiv);
+		contentArea.appendChild(scrollWrapper);
+
+		// Toggle functionality
+		this._register(addDisposableListener(headerRow, "click", () => {
+			const isExpanded = contentArea.getAttribute("data-expanded") === "true";
+			console.log('[VYBE AI] Thought header clicked - isExpanded:', isExpanded);
+			if (isExpanded) {
+				// Collapse
+				console.log('[VYBE AI] Collapsing thought');
+				contentArea.style.display = "none";
+				contentArea.setAttribute("data-expanded", "false");
+				scrollWrapper.style.height = "0px";
+				chevronIcon.style.transform = "rotate(0deg)"; // Point right
+			} else {
+				// Expand
+				console.log('[VYBE AI] Expanding thought');
+				contentArea.style.display = "block";
+				contentArea.setAttribute("data-expanded", "true");
+				chevronIcon.style.transform = "rotate(90deg)"; // Point down
+
+				// Measure actual content height and expand (max 220px)
+				requestAnimationFrame(() => {
+					const actualScrollHeight = thoughtText.scrollHeight;
+					console.log('[VYBE AI] thoughtText.scrollHeight:', actualScrollHeight);
+					// Calculate content height (max 220px, min 60px to ensure visibility)
+					const contentHeight = Math.max(60, Math.min(actualScrollHeight + 16, 220));
+					console.log('[VYBE AI] Setting scrollWrapper height to:', contentHeight);
+					scrollWrapper.style.height = `${contentHeight}px`;
+				});
+			}
+		}));
+
+		// Assemble
+		collapsibleWrapper.appendChild(headerRow);
+		collapsibleWrapper.appendChild(contentArea);
+		thoughtContainer.appendChild(collapsibleWrapper);
+
+		return thoughtContainer;
+	}
+
+	private renderTerminalBlock(command: string, output: string = "", status: 'ask' | 'running' | 'success' | 'failed' | 'skipped' = 'ask', autoRunMode: 'ask' | 'run' = 'ask'): HTMLElement {
+		const isDarkTheme = this.isDarkTheme();
+		const isRunEverything = autoRunMode === 'run';
+
+		// Parse command to extract individual commands (split by &&, ||, ;, |)
+		const commandParts = command.split(/\s*(?:&&|\|\||;|\|)\s*/).filter(c => c.trim());
+		const commandNames = commandParts.map(cmd => cmd.split(/\s+/)[0]).join(", ");
+
+		// Main container - MATCH code block container exactly
+		const terminalContainer = $("div");
+		terminalContainer.classList.add("vybe-ai-terminal-block");
+		terminalContainer.setAttribute("data-status", status);
+		terminalContainer.setAttribute("data-auto-run-mode", autoRunMode);
+		terminalContainer.setAttribute("data-command", command);
+		terminalContainer.style.background = "var(--vscode-editor-background)";
+		terminalContainer.style.borderRadius = "8px"; // Match code block
+		terminalContainer.style.border = isDarkTheme
+			? "0.5px solid rgba(128, 128, 128, 0.25)" // Match code block
+			: "0.5px solid rgba(0, 0, 0, 0.15)"; // Match code block
+		terminalContainer.style.overflow = "hidden";
+		terminalContainer.style.width = "100%";
+		terminalContainer.style.boxSizing = "border-box";
+		terminalContainer.style.margin = "6px 0";
+		terminalContainer.style.display = "flex";
+		terminalContainer.style.flexDirection = "column";
+		terminalContainer.style.position = "relative";
+
+		// Top header - MATCH code block header exactly
+		const topHeader = $("div");
+		topHeader.classList.add("vybe-ai-terminal-top-header");
+		topHeader.style.background = isDarkTheme ? "#1e1f21" : "#f8f8f9"; // Composer background
+		topHeader.style.display = "flex";
+		topHeader.style.justifyContent = "space-between";
+		topHeader.style.alignItems = "center";
+		topHeader.style.padding = "4px 8px"; // EXACT match with code block
+		topHeader.style.height = "28px"; // EXACT match with code block
+		topHeader.style.boxSizing = "border-box";
+		topHeader.style.gap = "8px"; // EXACT match with code block
+		topHeader.style.cursor = output ? "pointer" : "default";
+
+		// Left side - terminal icon and command label
+		const leftSide = $("div");
+		leftSide.style.flex = "1 1 0%";
+		leftSide.style.minWidth = "0px";
+		leftSide.style.display = "flex";
+		leftSide.style.gap = "6px";
+		leftSide.style.alignItems = "center";
+		leftSide.style.fontSize = "12px";
+		leftSide.style.color = isDarkTheme
+			? "rgba(153, 153, 153, 0.8)"
+			: "rgba(102, 102, 102, 0.8)";
+
+		const terminalIcon = $("span");
+		terminalIcon.className = "codicon codicon-terminal";
+
+		const labelText = $("span");
+		labelText.classList.add("terminal-header-label"); // For reliable selection
+		// Initial state: "Run command"
+		labelText.textContent = `Run command: ${commandNames}`;
+		labelText.style.whiteSpace = "nowrap";
+		labelText.style.overflow = "hidden";
+		labelText.style.textOverflow = "ellipsis";
+
+		leftSide.appendChild(terminalIcon);
+		leftSide.appendChild(labelText);
+
+		// Right side - chevron button (only if there's output)
+		const rightSide = $("div");
+		rightSide.style.display = "flex";
+		rightSide.style.alignItems = "center";
+		rightSide.style.gap = "4px";
+		rightSide.style.height = "20px";
+
+		const chevronButton = $("div");
+		chevronButton.style.width = "20px";
+		chevronButton.style.height = "20px";
+		chevronButton.style.display = "flex";
+		chevronButton.style.alignItems = "center";
+		chevronButton.style.justifyContent = "center";
+		chevronButton.style.cursor = "pointer";
+		chevronButton.style.borderRadius = "3px";
+
+		const chevronIcon = $("span");
+		chevronIcon.className = "codicon codicon-chevron-down";
+		chevronIcon.style.fontSize = "12px";
+		chevronIcon.style.transition = "transform 0.2s ease-in-out";
+		chevronIcon.style.transform = "rotate(0deg)"; // Down by default
+		chevronButton.appendChild(chevronIcon);
+
+		if (output) {
+			rightSide.appendChild(chevronButton);
+		}
+
+		topHeader.appendChild(leftSide);
+		topHeader.appendChild(rightSide);
+
+		// Separator line (extends to container borders)
+		const separator = $("div");
+		separator.style.height = "1px";
+		separator.style.backgroundColor = isDarkTheme
+			? "rgba(128, 128, 128, 0.2)"
+			: "rgba(0, 0, 0, 0.1)";
+		separator.style.margin = "0"; // No margin - full width
+		separator.style.width = "100%";
+
+		// Command section (with syntax highlighting)
+		const commandSection = $("div");
+		commandSection.classList.add("vybe-ai-terminal-command");
+		commandSection.style.padding = "4px 8px"; // Match code block content padding
+		commandSection.style.fontFamily = "Menlo, Monaco, 'Courier New', monospace";
+		commandSection.style.fontSize = "12px";
+		commandSection.style.lineHeight = "18px";
+		commandSection.style.whiteSpace = "pre-wrap";
+		commandSection.style.wordBreak = "break-all";
+		commandSection.style.userSelect = "text";
+		commandSection.style.backgroundColor = "transparent";
+
+		// Create syntax-highlighted command (simple approach - split by keywords)
+		const commandPrefix = $("span");
+		commandPrefix.textContent = "$ ";
+		commandPrefix.style.color = isDarkTheme ? "#569cd6" : "#0000ff"; // Blue for $
+
+		const commandText = $("span");
+		commandText.style.color = "var(--vscode-foreground)";
+
+		// Create syntax-highlighted command using DOM elements (TrustedHTML compliant)
+		this.appendHighlightedShellCommand(commandText, command, isDarkTheme);
+
+		commandSection.appendChild(commandPrefix);
+		commandSection.appendChild(commandText);
+
+			// Output section (collapsible, 3 lines = 54px: 3 * 18px line height)
+		const outputWrapper = $("div");
+		outputWrapper.classList.add("vybe-ai-terminal-output-wrapper");
+		outputWrapper.style.paddingLeft = "0px";
+		outputWrapper.style.marginLeft = "0px";
+		outputWrapper.style.display = output ? "block" : "none"; // Hide if no output
+
+		const THREE_LINES_HEIGHT = 54; // 3 lines * 18px line-height
+		const scrollWrapper = $("div");
+		scrollWrapper.style.position = "relative";
+		scrollWrapper.style.overflow = "hidden";
+		scrollWrapper.style.height = output ? `${THREE_LINES_HEIGHT}px` : "0px"; // Start with 3 lines or collapsed
+		scrollWrapper.style.maxHeight = "300px";
+		scrollWrapper.style.transition = "height 0.2s ease-in-out";
+
+		const scrollableDiv = $("div");
+		scrollableDiv.style.height = "100%";
+		scrollableDiv.style.overflow = "auto";
+
+		const outputContent = $("pre");
+		outputContent.classList.add("vybe-ai-terminal-output");
+		outputContent.style.margin = "0";
+		outputContent.style.padding = "4px 8px"; // Match code block content padding
+		outputContent.style.fontFamily = "Menlo, Monaco, 'Courier New', monospace";
+		outputContent.style.whiteSpace = "pre-wrap";
+		outputContent.style.wordBreak = "break-all";
+		outputContent.style.fontSize = "12px";
+		outputContent.style.lineHeight = "18px";
+		outputContent.style.userSelect = "text";
+		outputContent.style.color = "var(--vscode-foreground)";
+		outputContent.style.backgroundColor = "transparent";
+		outputContent.textContent = output;
+
+		scrollableDiv.appendChild(outputContent);
+		scrollWrapper.appendChild(scrollableDiv);
+		outputWrapper.appendChild(scrollWrapper);
+
+		// Expand/collapse toggle (only if there's output)
+		if (output) {
+			this._register(addDisposableListener(chevronButton, "click", () => {
+				const currentHeight = scrollWrapper.style.height;
+				if (currentHeight === `${THREE_LINES_HEIGHT}px`) {
+					// Expand to full content height (max 300px)
+					const fullHeight = Math.min(outputContent.scrollHeight + 8, 300);
+					scrollWrapper.style.height = `${fullHeight}px`;
+					chevronIcon.style.transform = "rotate(180deg)"; // Up
+				} else {
+					// Collapse back to 3 lines
+					scrollWrapper.style.height = `${THREE_LINES_HEIGHT}px`;
+					chevronIcon.style.transform = "rotate(0deg)"; // Down
+				}
+			}));
+		}
+
+		// Bottom control bar
+		const controlBar = $("div");
+		controlBar.classList.add("vybe-ai-terminal-control-bar");
+		controlBar.style.display = "flex";
+		controlBar.style.justifyContent = "space-between";
+		controlBar.style.alignItems = "center";
+		controlBar.style.padding = "4px 4px 4px 8px"; // Left padding 8px, right padding 4px (buttons have their own padding)
+		controlBar.style.fontSize = "12px";
+		controlBar.style.lineHeight = "16px";
+
+		// Left side - Mode selector dropdown
+		const leftControls = $("div");
+		leftControls.style.display = "flex";
+		leftControls.style.marginLeft = "-4px"; // Move left slightly
+
+		const modeButton = $("div");
+		modeButton.style.display = "flex";
+		modeButton.style.alignItems = "center";
+		modeButton.style.gap = "2px";
+		modeButton.style.padding = "2px 4px";
+		modeButton.style.borderRadius = "3px";
+		modeButton.style.cursor = "pointer";
+		modeButton.style.minHeight = "16px"; // Reduced by 20%
+		modeButton.style.boxSizing = "border-box";
+		modeButton.style.color = "var(--vscode-foreground)";
+
+		const modeText = $("span");
+		modeText.textContent = isRunEverything ? "Run Everything" : "Ask Every Time";
+
+		const modeChevron = $("div");
+		modeChevron.className = "codicon codicon-chevron-down";
+		modeChevron.style.fontSize = "12px";
+		modeChevron.style.marginLeft = "2px";
+
+		modeButton.appendChild(modeText);
+		modeButton.appendChild(modeChevron);
+		leftControls.appendChild(modeButton);
+
+		// Dropdown menu (initially hidden) - matches @ dropdown design
+		const dropdownMenu = $("div");
+		dropdownMenu.style.position = "absolute";
+		dropdownMenu.style.top = "0"; // Will be set dynamically
+		dropdownMenu.style.left = "0"; // Will be set dynamically
+		dropdownMenu.style.display = "none";
+		dropdownMenu.style.background = isDarkTheme ? "rgba(30, 31, 33, 0.95)" : "rgba(248, 248, 249, 0.95)";
+		dropdownMenu.style.border = isDarkTheme
+			? "1px solid rgba(128, 128, 128, 0.3)"
+			: "1px solid rgba(0, 0, 0, 0.15)";
+		dropdownMenu.style.borderRadius = "6px";
+		dropdownMenu.style.boxShadow = isDarkTheme
+			? "0 4px 12px rgba(0, 0, 0, 0.4)"
+			: "0 4px 12px rgba(0, 0, 0, 0.15)";
+		dropdownMenu.style.flexDirection = "column";
+		dropdownMenu.style.minWidth = "150px";
+		dropdownMenu.style.zIndex = "10000"; // Very high z-index to ensure visibility
+		dropdownMenu.style.overflow = "hidden";
+		dropdownMenu.style.backdropFilter = "blur(10px)";
+		dropdownMenu.style.pointerEvents = "auto"; // Ensure clicks work
+
+		// Dropdown option: Ask Every Time
+		const askOption = $("div");
+		askOption.style.padding = "6px 10px";
+		askOption.style.cursor = "pointer";
+		askOption.style.fontSize = "11px"; // Reduced by 2px from 13px
+		askOption.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+		askOption.style.color = "var(--vscode-foreground)";
+		askOption.style.fontWeight = !isRunEverything ? "500" : "normal";
+		askOption.textContent = "Ask Every Time";
+		askOption.style.backgroundColor = !isRunEverything ? (isDarkTheme ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.04)") : "transparent";
+		askOption.style.transition = "background-color 0.1s ease";
+
+		// Dropdown option: Run Everything
+		const runOption = $("div");
+		runOption.style.padding = "6px 10px";
+		runOption.style.cursor = "pointer";
+		runOption.style.fontSize = "11px"; // Reduced by 2px from 13px
+		runOption.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+		runOption.style.color = "var(--vscode-foreground)";
+		runOption.style.fontWeight = isRunEverything ? "500" : "normal";
+		runOption.textContent = "Run Everything";
+		runOption.style.backgroundColor = isRunEverything ? (isDarkTheme ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.04)") : "transparent";
+		runOption.style.transition = "background-color 0.1s ease";
+
+		// Hover effects
+		askOption.addEventListener("mouseenter", () => {
+			if (!isRunEverything) return;
+			askOption.style.backgroundColor = isDarkTheme ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)";
+		});
+		askOption.addEventListener("mouseleave", () => {
+			if (!isRunEverything) return;
+			askOption.style.backgroundColor = "transparent";
+		});
+		runOption.addEventListener("mouseenter", () => {
+			if (isRunEverything) return;
+			runOption.style.backgroundColor = isDarkTheme ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.05)";
+		});
+		runOption.addEventListener("mouseleave", () => {
+			if (isRunEverything) return;
+			runOption.style.backgroundColor = "transparent";
+		});
+
+		// Option click handlers
+		this._register(addDisposableListener(askOption, "click", (e) => {
+			e.stopPropagation();
+			console.log('[VYBE AI] Dropdown: switching to Ask Every Time');
+			terminalContainer.setAttribute("data-auto-run-mode", "ask");
+			modeText.textContent = "Ask Every Time";
+			askOption.style.backgroundColor = isDarkTheme ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.04)";
+			askOption.style.fontWeight = "500";
+			runOption.style.backgroundColor = "transparent";
+			runOption.style.fontWeight = "normal";
+			dropdownMenu.style.display = "none";
+		}));
+
+		this._register(addDisposableListener(runOption, "click", (e) => {
+			e.stopPropagation();
+			console.log('[VYBE AI] Dropdown: switching to Run Everything');
+			terminalContainer.setAttribute("data-auto-run-mode", "run");
+			modeText.textContent = "Run Everything";
+			runOption.style.backgroundColor = isDarkTheme ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.04)";
+			runOption.style.fontWeight = "500";
+			askOption.style.backgroundColor = "transparent";
+			askOption.style.fontWeight = "normal";
+			dropdownMenu.style.display = "none";
+
+			// Auto-run if status is 'ask'
+			const currentStatus = terminalContainer.getAttribute("data-status");
+			console.log('[VYBE AI] Current status:', currentStatus, '- will auto-run:', currentStatus === 'ask');
+			if (currentStatus === 'ask') {
+				setTimeout(() => {
+					console.log('[VYBE AI] Auto-running command...');
+					this.transitionTerminalBlock(terminalContainer, 'running', true); // isAutoRun = true
+				}, 100);
+			}
+		}));
+
+		dropdownMenu.appendChild(askOption);
+		dropdownMenu.appendChild(runOption);
+
+		// Position dropdown in document body to avoid clipping by parent containers
+		// We'll position it absolutely relative to the viewport
+		document.body.appendChild(dropdownMenu);
+
+		// Function to update dropdown position based on button position
+		const updateDropdownPosition = () => {
+			const buttonRect = modeButton.getBoundingClientRect();
+			dropdownMenu.style.left = `${buttonRect.left}px`;
+			dropdownMenu.style.top = `${buttonRect.bottom + 4}px`;
+		};
+
+		// Clean up dropdown when terminal container is removed
+		const observer = new MutationObserver((mutations) => {
+			mutations.forEach((mutation) => {
+				if (mutation.type === 'childList') {
+					mutation.removedNodes.forEach((node) => {
+						if (node === terminalContainer && dropdownMenu.parentNode) {
+							dropdownMenu.remove();
+							observer.disconnect();
+						}
+					});
+				}
+			});
+		});
+
+		// Observe the parent of terminal container
+		if (terminalContainer.parentNode) {
+			observer.observe(terminalContainer.parentNode, { childList: true });
+		}
+
+		// Track if we just opened the dropdown to prevent immediate close
+		let justOpened = false;
+
+		// Mode dropdown click handler
+		this._register(addDisposableListener(modeButton, "click", (e) => {
+			e.stopPropagation();
+			console.log('[VYBE AI] Mode button clicked, current display:', dropdownMenu.style.display);
+			const isVisible = dropdownMenu.style.display === "flex";
+
+			if (!isVisible) {
+				// Opening - update position and show
+				updateDropdownPosition();
+				dropdownMenu.style.display = "flex";
+				console.log('[VYBE AI] Dropdown display set to: flex, position updated');
+				justOpened = true;
+				setTimeout(() => {
+					justOpened = false;
+				}, 100);
+			} else {
+				// Closing
+				dropdownMenu.style.display = "none";
+				console.log('[VYBE AI] Dropdown display set to: none');
+			}
+		}));
+
+		// Close dropdown when clicking outside
+		this._register(addDisposableListener(document, "click", (e) => {
+			if (justOpened) {
+				console.log('[VYBE AI] Ignoring document click - just opened');
+				return;
+			}
+			// Check if click is outside both the button and the dropdown
+			if (!modeButton.contains(e.target as Node) && !dropdownMenu.contains(e.target as Node)) {
+				if (dropdownMenu.style.display === "flex") {
+					console.log('[VYBE AI] Closing dropdown from outside click');
+					dropdownMenu.style.display = "none";
+				}
+			}
+		}));
+
+		// Right side - Action buttons
+		const rightControls = $("div");
+		rightControls.classList.add("terminal-right-controls"); // For reliable selection in transitions
+		rightControls.style.display = "flex";
+		rightControls.style.alignItems = "center";
+		rightControls.style.gap = "8px";
+		rightControls.style.paddingRight = "4px"; // Consistent right padding
+
+		if (status === 'ask') {
+			// Ask state: Skip + Run buttons
+
+			// Skip button
+			const skipButton = $("div");
+			skipButton.style.display = "flex";
+			skipButton.style.alignItems = "center";
+			skipButton.style.padding = "2px 8px";
+			skipButton.style.borderRadius = "3px";
+			skipButton.style.cursor = "pointer";
+			skipButton.style.minHeight = "16px"; // Reduced by 20%
+			skipButton.style.color = "var(--vscode-foreground)";
+
+			const skipText = $("span");
+			skipText.textContent = "Skip";
+			skipButton.appendChild(skipText);
+
+			// Skip button click handler
+			this._register(addDisposableListener(skipButton, "click", (e) => {
+				e.stopPropagation();
+				console.log('[VYBE AI] Skip button clicked - transitioning to skipped');
+				this.transitionTerminalBlock(terminalContainer, 'skipped');
+			}));
+
+			// Run button (primary/VYBE green)
+			const runButton = $("div");
+			runButton.style.display = "flex";
+			runButton.style.alignItems = "center";
+			runButton.style.gap = "4px";
+			runButton.style.padding = "2px 8px";
+			runButton.style.borderRadius = "3px";
+			runButton.style.cursor = "pointer";
+			runButton.style.minHeight = "16px"; // Reduced by 20%
+			runButton.style.backgroundColor = "#3ecf8e"; // VYBE green
+			runButton.style.color = "#ffffff";
+
+			const runText = $("span");
+			runText.textContent = "Run";
+
+			const runKeyHint = $("span");
+			runKeyHint.textContent = "⏎";
+			runKeyHint.style.fontSize = "10px";
+			runKeyHint.style.opacity = "0.5";
+
+			runButton.appendChild(runText);
+			runButton.appendChild(runKeyHint);
+
+			// Run button click handler
+			this._register(addDisposableListener(runButton, "click", (e) => {
+				e.stopPropagation();
+				console.log('[VYBE AI] Run button clicked - transitioning to running');
+				this.transitionTerminalBlock(terminalContainer, 'running');
+			}));
+
+			rightControls.appendChild(skipButton);
+			rightControls.appendChild(runButton);
+		} else if (status === 'running') {
+			// Running state: Cancel button + Loading spinner
+
+			// Cancel button
+			const cancelButton = $("div");
+			cancelButton.style.display = "flex";
+			cancelButton.style.alignItems = "center";
+			cancelButton.style.gap = "4px";
+			cancelButton.style.padding = "2px 4px";
+			cancelButton.style.borderRadius = "3px";
+			cancelButton.style.cursor = "pointer";
+			cancelButton.style.minHeight = "16px"; // Reduced by 20%
+			cancelButton.style.color = "var(--vscode-foreground)";
+
+			const cancelText = $("span");
+			cancelText.textContent = "⇧⌫ Cancel";
+			cancelButton.appendChild(cancelText);
+
+			// Cancel button click handler
+			this._register(addDisposableListener(cancelButton, "click", (e) => {
+				e.stopPropagation();
+				console.log('[VYBE AI] Cancel button clicked - transitioning to ask');
+				this.transitionTerminalBlock(terminalContainer, 'ask');
+			}));
+
+			// Loading spinner
+			const loadingSpinner = $("div");
+			loadingSpinner.style.width = "14px";
+			loadingSpinner.style.height = "14px";
+			loadingSpinner.style.borderRadius = "50%";
+			loadingSpinner.style.border = "2px solid transparent";
+			loadingSpinner.style.borderTopColor = isDarkTheme ? "#ffffff40" : "#00000040";
+			loadingSpinner.style.borderRightColor = isDarkTheme ? "#ffffff40" : "#00000040";
+			loadingSpinner.style.animation = "spin 1s linear infinite";
+
+			rightControls.appendChild(cancelButton);
+			rightControls.appendChild(loadingSpinner);
+		} else if (status === 'success') {
+			// Success state: Checkmark icon + "Success" text
+			const successContainer = $("div");
+			successContainer.style.display = "flex";
+			successContainer.style.alignItems = "center";
+			successContainer.style.gap = "4px";
+			successContainer.style.color = isDarkTheme ? "#89d185" : "#388a34";
+
+			const checkIcon = $("span");
+			checkIcon.className = "codicon codicon-check";
+			checkIcon.style.fontSize = "14px";
+
+			const successText = $("span");
+			successText.textContent = "Success";
+			successText.style.fontSize = "12px";
+
+			successContainer.appendChild(checkIcon);
+			successContainer.appendChild(successText);
+			rightControls.appendChild(successContainer);
+		} else if (status === 'failed') {
+			// Failed state: Error icon + "Failed" text
+			const failedContainer = $("div");
+			failedContainer.style.display = "flex";
+			failedContainer.style.alignItems = "center";
+			failedContainer.style.gap = "4px";
+			failedContainer.style.color = isDarkTheme ? "#f48771" : "#cd3131";
+
+			const errorIcon = $("span");
+			errorIcon.className = "codicon codicon-error";
+			errorIcon.style.fontSize = "14px";
+
+			const failedText = $("span");
+			failedText.textContent = "Failed";
+			failedText.style.fontSize = "12px";
+
+			failedContainer.appendChild(errorIcon);
+			failedContainer.appendChild(failedText);
+			rightControls.appendChild(failedContainer);
+		} else if (status === 'skipped') {
+			// Skipped state: Circle-slash icon + "Rejected" text
+			const skippedContainer = $("div");
+			skippedContainer.style.display = "flex";
+			skippedContainer.style.alignItems = "center";
+			skippedContainer.style.gap = "4px";
+			skippedContainer.style.color = isDarkTheme ? "#cccccc80" : "#61616180";
+
+			const rejectIcon = $("span");
+			rejectIcon.className = "codicon codicon-circle-slash";
+			rejectIcon.style.fontSize = "14px";
+
+			const rejectedText = $("span");
+			rejectedText.textContent = "Rejected";
+			rejectedText.style.fontSize = "12px";
+
+			skippedContainer.appendChild(rejectIcon);
+			skippedContainer.appendChild(rejectedText);
+			rightControls.appendChild(skippedContainer);
+		}
+
+		controlBar.appendChild(leftControls);
+		controlBar.appendChild(rightControls);
+
+		// Assemble
+		terminalContainer.appendChild(topHeader);
+		terminalContainer.appendChild(separator);
+		terminalContainer.appendChild(commandSection);
+		// Always append output wrapper (even if empty) so we can populate it later
+		terminalContainer.appendChild(outputWrapper);
+		terminalContainer.appendChild(controlBar);
+
+		// Auto-run if in "Run Everything" mode and status is 'ask'
+		if (isRunEverything && status === 'ask') {
+			// Small delay to ensure DOM is ready
+			setTimeout(() => {
+				this.transitionTerminalBlock(terminalContainer, 'running', true); // isAutoRun = true
+			}, 100);
+		}
+
+		return terminalContainer;
+	}
+
+	private transitionTerminalBlock(container: HTMLElement, newStatus: 'ask' | 'running' | 'success' | 'failed' | 'skipped', isAutoRun: boolean = false): void {
+		const currentStatus = container.getAttribute("data-status");
+		console.log('[VYBE AI] Terminal transition:', currentStatus, '->', newStatus, 'isAutoRun:', isAutoRun);
+
+		if (currentStatus === newStatus) {
+			console.log('[VYBE AI] Already in this state, skipping');
+			return;
+		}
+
+		const command = container.getAttribute("data-command") || "";
+		const isDarkTheme = this.isDarkTheme();
+
+		// Update status attribute
+		container.setAttribute("data-status", newStatus);
+
+		// Track if this was an auto-run
+		if (newStatus === 'running' && isAutoRun) {
+			container.setAttribute("data-was-auto-run", "true");
+		} else if (newStatus === 'ask') {
+			// Clear auto-run flag when returning to ask state
+			container.removeAttribute("data-was-auto-run");
+		}
+
+		// Update header label
+		const labelText = container.querySelector(".terminal-header-label") as HTMLElement;
+		console.log('[VYBE AI] Found labelText:', !!labelText);
+		if (labelText) {
+			const commandParts = command.split(/\s*(?:&&|\|\||;|\|)\s*/).filter(c => c.trim());
+			const commandNames = commandParts.map(cmd => cmd.split(/\s+/)[0]).join(", ");
+
+			let label = "";
+			if (newStatus === 'running') {
+				label = `Running command: ${commandNames}`;
+			} else if (newStatus === 'success' || newStatus === 'failed') {
+				const wasAutoRun = container.getAttribute("data-was-auto-run") === "true";
+				label = wasAutoRun ? `Auto-ran command: ${commandNames}` : `Ran command: ${commandNames}`;
+			} else {
+				// ask or skipped
+				label = `Run command: ${commandNames}`;
+			}
+
+			labelText.textContent = label;
+			console.log('[VYBE AI] Updated label to:', labelText.textContent);
+		} else {
+			console.error('[VYBE AI] Label text element not found!');
+		}
+
+		// Get control bar
+		const controlBar = container.querySelector(".vybe-ai-terminal-control-bar") as HTMLElement;
+		if (!controlBar) {
+			console.error('[VYBE AI] Control bar not found!');
+			return;
+		}
+
+		// Clear right controls using the class selector
+		const rightControls = controlBar.querySelector(".terminal-right-controls") as HTMLElement;
+		if (!rightControls) {
+			console.error('[VYBE AI] Right controls not found!');
+			return;
+		}
+
+		// Clear existing buttons
+		while (rightControls.firstChild) {
+			rightControls.removeChild(rightControls.firstChild);
+		}
+
+		console.log('[VYBE AI] Cleared right controls, rendering new state:', newStatus);
+
+		// Render new state
+		if (newStatus === 'ask') {
+			// Ask state: Skip + Run buttons
+			const skipButton = $("div");
+			skipButton.style.display = "flex";
+			skipButton.style.alignItems = "center";
+			skipButton.style.padding = "2px 8px";
+			skipButton.style.borderRadius = "3px";
+			skipButton.style.cursor = "pointer";
+			skipButton.style.minHeight = "16px";
+			skipButton.style.color = "var(--vscode-foreground)";
+			skipButton.textContent = "Skip";
+			this._register(addDisposableListener(skipButton, "click", (e) => {
+				e.stopPropagation();
+				this.transitionTerminalBlock(container, 'skipped');
+			}));
+
+			const runButton = $("div");
+			runButton.style.display = "flex";
+			runButton.style.alignItems = "center";
+			runButton.style.gap = "4px";
+			runButton.style.padding = "2px 8px";
+			runButton.style.borderRadius = "3px";
+			runButton.style.cursor = "pointer";
+			runButton.style.minHeight = "16px";
+			runButton.style.backgroundColor = "#3ecf8e";
+			runButton.style.color = "#ffffff";
+
+			const runText = $("span");
+			runText.textContent = "Run";
+			const runKeyHint = $("span");
+			runKeyHint.textContent = "⏎";
+			runKeyHint.style.fontSize = "10px";
+			runKeyHint.style.opacity = "0.5";
+
+			runButton.appendChild(runText);
+			runButton.appendChild(runKeyHint);
+			this._register(addDisposableListener(runButton, "click", (e) => {
+				e.stopPropagation();
+				this.transitionTerminalBlock(container, 'running');
+			}));
+
+			rightControls.appendChild(skipButton);
+			rightControls.appendChild(runButton);
+			console.log('[VYBE AI] Rendered ask state buttons');
+		} else if (newStatus === 'running') {
+			// Running state: Cancel button + Loading spinner
+			const cancelButton = $("div");
+			cancelButton.style.display = "flex";
+			cancelButton.style.alignItems = "center";
+			cancelButton.style.gap = "4px";
+			cancelButton.style.padding = "2px 4px";
+			cancelButton.style.borderRadius = "3px";
+			cancelButton.style.cursor = "pointer";
+			cancelButton.style.minHeight = "16px";
+			cancelButton.style.color = "var(--vscode-foreground)";
+			cancelButton.textContent = "⇧⌫ Cancel";
+			this._register(addDisposableListener(cancelButton, "click", (e) => {
+				e.stopPropagation();
+				this.transitionTerminalBlock(container, 'ask');
+			}));
+
+			const loadingSpinner = $("div");
+			loadingSpinner.style.width = "14px";
+			loadingSpinner.style.height = "14px";
+			loadingSpinner.style.borderRadius = "50%";
+			loadingSpinner.style.border = "2px solid transparent";
+			loadingSpinner.style.borderTopColor = isDarkTheme ? "#ffffff40" : "#00000040";
+			loadingSpinner.style.borderRightColor = isDarkTheme ? "#ffffff40" : "#00000040";
+			loadingSpinner.style.animation = "spin 1s linear infinite";
+
+			rightControls.appendChild(cancelButton);
+			rightControls.appendChild(loadingSpinner);
+			console.log('[VYBE AI] Rendered running state (cancel + spinner)');
+
+			// Simulate command execution (2-3 seconds)
+			const executionTime = 2000 + Math.random() * 1000;
+			console.log('[VYBE AI] Will execute command in', executionTime, 'ms');
+			setTimeout(() => {
+				console.log('[VYBE AI] Command execution timeout fired');
+				// Check if still in running state (not cancelled)
+				const currentStatus = container.getAttribute("data-status");
+				console.log('[VYBE AI] Current status:', currentStatus);
+				if (currentStatus === 'running') {
+					// Add simulated output
+					const outputWrapper = container.querySelector(".vybe-ai-terminal-output-wrapper") as HTMLElement;
+					const outputContent = container.querySelector(".vybe-ai-terminal-output") as HTMLElement;
+					console.log('[VYBE AI] Found outputWrapper:', !!outputWrapper, 'outputContent:', !!outputContent);
+					if (outputWrapper && outputContent) {
+						// Show output section
+						console.log('[VYBE AI] Showing output section');
+						outputWrapper.style.display = "block";
+						// Add output text
+						outputContent.textContent = `[${new Date().toTimeString().split(' ')[0]}] Starting compile ...
+[${new Date().toTimeString().split(' ')[0]}] Finished compile after 0 ms
+[${new Date().toTimeString().split(' ')[0]}] Finished 'compile' after 2.5 min
+Done in 152.43s.`;
+						console.log('[VYBE AI] Added output text, length:', outputContent.textContent.length);
+
+						// Set initial height to 3 lines (54px)
+						const scrollWrapper = outputWrapper.querySelector("div") as HTMLElement;
+						console.log('[VYBE AI] Found scrollWrapper:', !!scrollWrapper);
+						if (scrollWrapper) {
+							scrollWrapper.style.height = "54px";
+							console.log('[VYBE AI] Set scrollWrapper height to 54px');
+						}
+
+						// Enable header chevron button
+						const topHeader = container.querySelector(".vybe-ai-terminal-top-header") as HTMLElement;
+						if (topHeader) {
+							topHeader.style.cursor = "pointer";
+							// Find the chevron button (it's in the right side, last div)
+							const rightSide = topHeader.querySelector("div:last-child") as HTMLElement;
+							const chevronButton = rightSide?.querySelector("div") as HTMLElement;
+							const chevronIcon = chevronButton?.querySelector("span") as HTMLElement;
+
+							// Add expand/collapse functionality
+							if (chevronButton && scrollWrapper) {
+								const THREE_LINES_HEIGHT = 54;
+								this._register(addDisposableListener(chevronButton, "click", () => {
+									const currentHeight = scrollWrapper.style.height;
+									if (currentHeight === `${THREE_LINES_HEIGHT}px`) {
+										// Expand to full content height (max 300px)
+										const fullHeight = Math.min(outputContent.scrollHeight + 8, 300);
+										scrollWrapper.style.height = `${fullHeight}px`;
+										if (chevronIcon) chevronIcon.style.transform = "rotate(180deg)"; // Up
+									} else {
+										// Collapse back to 3 lines
+										scrollWrapper.style.height = `${THREE_LINES_HEIGHT}px`;
+										if (chevronIcon) chevronIcon.style.transform = "rotate(0deg)"; // Down
+									}
+								}));
+							}
+						}
+					}
+
+					// Simulate success (90% chance) or failure (10% chance)
+					const success = Math.random() > 0.1;
+					const wasAutoRun = container.getAttribute("data-was-auto-run") === "true";
+					console.log('[VYBE AI] Command execution complete, transitioning to:', success ? 'success' : 'failed', 'wasAutoRun:', wasAutoRun);
+					this.transitionTerminalBlock(container, success ? 'success' : 'failed', wasAutoRun);
+				} else {
+					console.log('[VYBE AI] Command was cancelled, not transitioning');
+				}
+			}, executionTime);
+		} else if (newStatus === 'success') {
+			// Success state: Checkmark icon + "Success" text
+			const successContainer = $("div");
+			successContainer.style.display = "flex";
+			successContainer.style.alignItems = "center";
+			successContainer.style.gap = "4px";
+			successContainer.style.color = isDarkTheme ? "#89d185" : "#388a34";
+
+			const checkIcon = $("span");
+			checkIcon.className = "codicon codicon-check";
+			checkIcon.style.fontSize = "14px";
+
+			const successText = $("span");
+			successText.textContent = "Success";
+			successText.style.fontSize = "12px";
+
+			successContainer.appendChild(checkIcon);
+			successContainer.appendChild(successText);
+			rightControls.appendChild(successContainer);
+			console.log('[VYBE AI] Rendered success state');
+		} else if (newStatus === 'failed') {
+			// Failed state: Error icon + "Failed" text
+			const failedContainer = $("div");
+			failedContainer.style.display = "flex";
+			failedContainer.style.alignItems = "center";
+			failedContainer.style.gap = "4px";
+			failedContainer.style.color = isDarkTheme ? "#f48771" : "#cd3131";
+
+			const errorIcon = $("span");
+			errorIcon.className = "codicon codicon-error";
+			errorIcon.style.fontSize = "14px";
+
+			const failedText = $("span");
+			failedText.textContent = "Failed";
+			failedText.style.fontSize = "12px";
+
+			failedContainer.appendChild(errorIcon);
+			failedContainer.appendChild(failedText);
+			rightControls.appendChild(failedContainer);
+			console.log('[VYBE AI] Rendered failed state');
+		} else if (newStatus === 'skipped') {
+			// Skipped state: Circle-slash icon + "Rejected" text
+			const skippedContainer = $("div");
+			skippedContainer.style.display = "flex";
+			skippedContainer.style.alignItems = "center";
+			skippedContainer.style.gap = "4px";
+			skippedContainer.style.color = isDarkTheme ? "#cccccc80" : "#61616180";
+
+			const rejectIcon = $("span");
+			rejectIcon.className = "codicon codicon-circle-slash";
+			rejectIcon.style.fontSize = "14px";
+
+			const rejectedText = $("span");
+			rejectedText.textContent = "Rejected";
+			rejectedText.style.fontSize = "12px";
+
+			skippedContainer.appendChild(rejectIcon);
+			skippedContainer.appendChild(rejectedText);
+			rightControls.appendChild(skippedContainer);
+			console.log('[VYBE AI] Rendered skipped state');
+		}
+	}
+
+	private appendHighlightedShellCommand(container: HTMLElement, command: string, isDark: boolean): void {
+		// Simple shell syntax highlighting using DOM elements (TrustedHTML compliant)
+		const colors = isDark ? {
+			command: "#4ec9b0",      // Teal for commands
+			flag: "#9cdcfe",         // Light blue for flags
+			string: "#ce9178",       // Orange for strings/paths
+			operator: "#d4d4d4",     // Light gray for operators
+		} : {
+			command: "#008080",      // Teal for commands
+			flag: "#0070c1",         // Blue for flags
+			string: "#a31515",       // Red for strings/paths
+			operator: "#000000",     // Black for operators
+		};
+
+		const commonCommands = new Set(['cd', 'ls', 'yarn', 'npm', 'node', 'git', 'mkdir', 'rm', 'cp', 'mv', 'cat', 'echo', 'touch']);
+
+		// Tokenize the command
+		const tokens: Array<{ text: string; type: 'command' | 'flag' | 'path' | 'operator' | 'text' }> = [];
+
+		// Split by common shell operators while keeping them
+		const parts = command.split(/(\s+|&&|\|\||;|\|)/);
+
+		for (const part of parts) {
+			if (!part) continue;
+
+			// Check if it's an operator
+			if (/^(&&|\|\||;|\|)$/.test(part)) {
+				tokens.push({ text: part, type: 'operator' });
+			}
+			// Check if it's whitespace
+			else if (/^\s+$/.test(part)) {
+				tokens.push({ text: part, type: 'text' });
+			}
+			// Check if it's a flag (starts with - or --)
+			else if (/^--?[\w-]+$/.test(part)) {
+				tokens.push({ text: part, type: 'flag' });
+			}
+			// Check if it's a path (contains /)
+			else if (/[\/~]/.test(part)) {
+				tokens.push({ text: part, type: 'path' });
+			}
+			// Check if it's a common command
+			else if (commonCommands.has(part)) {
+				tokens.push({ text: part, type: 'command' });
+			}
+			// Otherwise, it's plain text
+			else {
+				tokens.push({ text: part, type: 'text' });
+			}
+		}
+
+		// Create DOM elements for each token
+		for (const token of tokens) {
+			const span = $("span");
+			span.textContent = token.text;
+
+			switch (token.type) {
+				case 'command':
+					span.style.color = colors.command;
+					break;
+				case 'flag':
+					span.style.color = colors.flag;
+					break;
+				case 'path':
+					span.style.color = colors.string;
+					break;
+				case 'operator':
+					span.style.color = colors.operator;
+					break;
+				default:
+					// Plain text uses parent color
+					break;
+			}
+
+			container.appendChild(span);
+		}
+	}
+
+	/**
+	 * Stream text into an element word by word
+	 */
+	private streamText(element: HTMLElement, text: string, delayPerWord: number = 20): void {
+		const words = text.split(' ');
+		let currentIndex = 0;
+
+		const addNextWord = () => {
+			if (currentIndex < words.length) {
+				element.textContent = words.slice(0, currentIndex + 1).join(' ');
+				currentIndex++;
+				setTimeout(addNextWord, delayPerWord);
+			}
+		};
+
+		addNextWord();
+	}
+
 	private addAiMessage(content: string): void {
 		// Create message object
 		const message = {
@@ -4257,17 +5995,178 @@ export class VybeAiPaneWithCustomTitle extends ViewPane {
 					`[data-response-for="${lastUserMessage.id}"]`,
 				) as HTMLElement;
 				if (aiResponseArea) {
-					// Create AI content
+					// Create AI content (stream it)
 					const aiContent = $(".vybe-ai-response-content");
-					aiContent.textContent = message.content;
+					aiContent.textContent = "";
 					aiContent.style.fontSize = "13px";
 					aiContent.style.lineHeight = "1.6";
 					aiContent.style.color = "var(--vscode-foreground)";
 					aiContent.style.whiteSpace = "pre-wrap";
 					aiContent.style.wordBreak = "break-word";
 					aiContent.style.opacity = "0.9";
+					aiContent.style.marginBottom = "12px";
 
 					aiResponseArea.appendChild(aiContent);
+
+					// Stream the AI response
+					this.streamText(aiContent, message.content, 20); // 20ms per word
+
+					// DEMO: Iterative agentic workflow
+
+					// Step 1: Planning next moves (streaming)
+					const thoughtBlock1 = this.renderThoughtBlock(
+						"Planning next moves",
+						0,
+						"", // Start with empty content
+						true
+					);
+					thoughtBlock1.style.marginBottom = "12px";
+					aiResponseArea.appendChild(thoughtBlock1);
+
+					// Stream the thought content
+					const thoughtText1 = thoughtBlock1.querySelector('.vybe-ai-thought-text') as HTMLElement;
+					if (thoughtText1) {
+						this.streamText(thoughtText1, "I need to add token colors to both VYBE themes. First, I'll update vybe-dark.json with comprehensive token colors for syntax highlighting.", 15);
+					}
+
+					// Simulate: After 2s, planning completes and shows loading code block
+					setTimeout(() => {
+						const currentIsDark = this.isDarkTheme();
+
+						// Collapse planning and add duration
+						const labelSpan1 = thoughtBlock1.querySelector('.vybe-ai-thought-header span span') as HTMLElement;
+						if (labelSpan1) {
+							labelSpan1.textContent = "Thought";
+						}
+						const textContent1 = thoughtBlock1.querySelector('.vybe-ai-thought-header span div') as HTMLElement;
+						if (textContent1 && !textContent1.querySelector('span:nth-child(2)')) {
+							const durationSpan = $("span");
+							durationSpan.textContent = "for 2.1s";
+							durationSpan.style.color = currentIsDark ? "rgba(153, 153, 153, 0.6)" : "rgba(128, 128, 128, 0.6)";
+							durationSpan.style.marginLeft = "4px";
+							durationSpan.style.whiteSpace = "nowrap";
+							textContent1.appendChild(durationSpan);
+						}
+						const contentArea1 = thoughtBlock1.querySelector('.vybe-ai-thought-content') as HTMLElement;
+						const scrollWrapper1 = contentArea1?.querySelector('div') as HTMLElement;
+						const chevron1 = thoughtBlock1.querySelector('.codicon-chevron-right') as HTMLElement;
+						if (contentArea1 && scrollWrapper1 && chevron1) {
+							contentArea1.style.display = "none";
+							contentArea1.setAttribute("data-expanded", "false");
+							scrollWrapper1.style.height = "0px";
+							chevron1.style.transform = "rotate(0deg)";
+						}
+
+						// Show loading code block (isLoading = true)
+						const loadingBlock1 = this.renderCodeBlock(
+							"vybe-dark.json",
+							"json",
+							0,
+							0,
+							false,
+							true // isLoading = true
+						);
+						loadingBlock1.style.marginBottom = "12px";
+						aiResponseArea.appendChild(loadingBlock1);
+
+						// After 1.5s, replace loading with actual code block
+						setTimeout(() => {
+							loadingBlock1.remove();
+							const codeBlock1 = this.renderCodeBlock(
+								"vybe-dark.json",
+								"json",
+								15,
+								2,
+								true,
+								false // isLoading = false (full state)
+							);
+							codeBlock1.style.marginBottom = "12px";
+							aiResponseArea.appendChild(codeBlock1);
+
+							// Step 2: Planning next moves again (for second file)
+							setTimeout(() => {
+								const thoughtBlock2 = this.renderThoughtBlock(
+									"Planning next moves",
+									0,
+									"", // Start with empty content
+									true
+								);
+								thoughtBlock2.style.marginBottom = "12px";
+								aiResponseArea.appendChild(thoughtBlock2);
+
+								// Stream the thought content
+								const thoughtText2 = thoughtBlock2.querySelector('.vybe-ai-thought-text') as HTMLElement;
+								if (thoughtText2) {
+									this.streamText(thoughtText2, "Now I need to update vybe-light.json with the same property scopes for consistent syntax highlighting across both themes.", 15);
+								}
+
+								// After 1.8s, planning completes
+								setTimeout(() => {
+									const labelSpan2 = thoughtBlock2.querySelector('.vybe-ai-thought-header span span') as HTMLElement;
+									if (labelSpan2) {
+										labelSpan2.textContent = "Thought";
+									}
+									const textContent2 = thoughtBlock2.querySelector('.vybe-ai-thought-header span div') as HTMLElement;
+									if (textContent2 && !textContent2.querySelector('span:nth-child(2)')) {
+										const durationSpan = $("span");
+										durationSpan.textContent = "for 1.8s";
+										durationSpan.style.color = currentIsDark ? "rgba(153, 153, 153, 0.6)" : "rgba(128, 128, 128, 0.6)";
+										durationSpan.style.marginLeft = "4px";
+										durationSpan.style.whiteSpace = "nowrap";
+										textContent2.appendChild(durationSpan);
+									}
+									const contentArea2 = thoughtBlock2.querySelector('.vybe-ai-thought-content') as HTMLElement;
+									const scrollWrapper2 = contentArea2?.querySelector('div') as HTMLElement;
+									const chevron2 = thoughtBlock2.querySelector('.codicon-chevron-right') as HTMLElement;
+									if (contentArea2 && scrollWrapper2 && chevron2) {
+										contentArea2.style.display = "none";
+										contentArea2.setAttribute("data-expanded", "false");
+										scrollWrapper2.style.height = "0px";
+										chevron2.style.transform = "rotate(0deg)";
+									}
+
+									// Show loading for second file
+									const loadingBlock2 = this.renderCodeBlock(
+										"vybe-light.json",
+										"json",
+										0,
+										0,
+										false,
+										true // isLoading = true
+									);
+									loadingBlock2.style.marginBottom = "12px";
+									aiResponseArea.appendChild(loadingBlock2);
+
+									// After 1s, replace with actual code block
+									setTimeout(() => {
+										loadingBlock2.remove();
+										const codeBlock2 = this.renderCodeBlock(
+											"vybe-light.json",
+											"json",
+											15,
+											2,
+											true,
+											false // isLoading = false (full state)
+										);
+										codeBlock2.style.marginBottom = "12px";
+										aiResponseArea.appendChild(codeBlock2);
+
+										// After 800ms, show terminal block (ask state - stays here for testing)
+										setTimeout(() => {
+											const terminalBlock = this.renderTerminalBlock(
+												"cd /Users/neel/VYBECode && yarn compile",
+												"", // No output initially - will be added when command runs
+												'ask', // Ask for permission - stays in this state for testing
+												'ask' // Auto-run mode: 'ask' (user must click Run) or 'run' (auto-runs)
+											);
+											terminalBlock.style.marginBottom = "12px";
+											aiResponseArea.appendChild(terminalBlock);
+										}, 800);
+									}, 1000);
+								}, 1800);
+							}, 500);
+						}, 1500);
+					}, 2100);
 				}
 			}
 		}
