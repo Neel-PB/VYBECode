@@ -9,6 +9,9 @@ import {
 	append,
 	clearNode,
 } from "../../../../base/browser/dom.js";
+import { URI } from "../../../../base/common/uri.js";
+import { FileKind } from "../../../../platform/files/common/files.js";
+import { ResourceLabels, DEFAULT_LABELS_CONTAINER } from "../../../browser/labels.js";
 import { IConfigurationService } from "../../../../platform/configuration/common/configuration.js";
 import { IContextKeyService } from "../../../../platform/contextkey/common/contextkey.js";
 import { IContextMenuService } from "../../../../platform/contextview/browser/contextView.js";
@@ -58,6 +61,7 @@ export class VybeAiPaneWithCustomTitle extends ViewPane {
 	private composerInputBox: HTMLElement | null = null;
 	private separatorElement: HTMLElement | null = null;
 	private headerScrollbarSlider: HTMLElement | null = null;
+	private resourceLabels!: ResourceLabels;
 
 	constructor(
 		options: IViewPaneOptions,
@@ -538,6 +542,9 @@ export class VybeAiPaneWithCustomTitle extends ViewPane {
 		this.container = parent;
 		this.container.classList.add("vybe-ai-pane");
 
+		// Initialize resource labels for file icons
+		this.resourceLabels = this._register(this.instantiationService.createInstance(ResourceLabels, DEFAULT_LABELS_CONTAINER));
+
 		// Main container with flex layout
 		const mainContainer = $(".vybe-ai-main-container");
 		mainContainer.style.display = "flex";
@@ -551,9 +558,11 @@ export class VybeAiPaneWithCustomTitle extends ViewPane {
 		this.contentContainer.style.flex = "1";
 		this.contentContainer.style.overflow = "auto";
 		this.contentContainer.style.padding = "0";
+		this.contentContainer.style.paddingRight = "0"; // No padding for scrollbar - it overlays
 		this.contentContainer.style.paddingBottom = "100%"; // Spacer at bottom to scroll last page to top
 		this.contentContainer.style.boxSizing = "border-box";
 		this.contentContainer.style.scrollSnapType = "y mandatory"; // Snap to pages
+		this.contentContainer.style.width = "100%"; // Ensure full width regardless of scrollbar
 		mainContainer.appendChild(this.contentContainer);
 
 		// Toolbar above composer (in its own container)
@@ -587,6 +596,75 @@ export class VybeAiPaneWithCustomTitle extends ViewPane {
 				}
 			`;
 			document.head.appendChild(style);
+		}
+
+		// Add custom scrollbar styling to match VS Code scrollbar design
+		if (!document.getElementById("vybe-ai-scrollbar-style")) {
+			const scrollbarStyle = document.createElement("style");
+			scrollbarStyle.id = "vybe-ai-scrollbar-style";
+			scrollbarStyle.textContent = `
+				.vybe-ai-content::-webkit-scrollbar {
+					width: 8px;
+					height: 8px;
+				}
+
+				.vybe-ai-content::-webkit-scrollbar-track {
+					background: transparent;
+				}
+
+				/* Initially transparent - only show on hover */
+				.vybe-ai-content::-webkit-scrollbar-thumb {
+					background-color: transparent;
+					border-radius: 0;
+					transition: background-color 0.3s ease;
+				}
+
+				/* Show scrollbar on hover over content area */
+				.vybe-ai-content:hover::-webkit-scrollbar-thumb {
+					background-color: var(--vscode-scrollbarSlider-background);
+				}
+
+				.vybe-ai-content:hover::-webkit-scrollbar-thumb:hover {
+					background-color: var(--vscode-scrollbarSlider-hoverBackground);
+				}
+
+				.vybe-ai-content:hover::-webkit-scrollbar-thumb:active {
+					background-color: var(--vscode-scrollbarSlider-activeBackground);
+				}
+
+				.vybe-ai-content::-webkit-scrollbar-corner {
+					background: transparent;
+				}
+
+				/* Hide all text in file icon containers, show only icons */
+				.file-icon-container .monaco-icon-label-container {
+					font-size: 0 !important;
+					line-height: 0 !important;
+					display: flex !important;
+					align-items: center !important;
+					justify-content: center !important;
+					height: 16px !important;
+				}
+
+				.file-icon-container .monaco-icon-label {
+					display: flex !important;
+					align-items: center !important;
+					justify-content: center !important;
+					height: 16px !important;
+				}
+
+				.file-icon-container .label-name,
+				.file-icon-container .monaco-icon-description-container {
+					display: none !important;
+				}
+
+				.file-icon-container .monaco-icon-label::before {
+					display: flex !important;
+					align-items: center !important;
+					justify-content: center !important;
+				}
+			`;
+			document.head.appendChild(scrollbarStyle);
 		}
 
 		// Empty state removed - composer is always visible
@@ -4183,8 +4261,7 @@ export class VybeAiPaneWithCustomTitle extends ViewPane {
 		messageHeader.style.position = "sticky";
 		messageHeader.style.top = "0";
 		messageHeader.style.zIndex = "10";
-		messageHeader.style.padding = "1px 10px 8px";
-		messageHeader.style.paddingBottom = "10px";
+		messageHeader.style.padding = "1px 2px 10px 10px"; // Right: 2px (so 2+8 scrollbar = 10px visual), Left: 10px
 		messageHeader.style.backgroundColor = "var(--vscode-sideBar-background)";
 		messageHeader.style.flexShrink = "0"; // Don't shrink
 
@@ -4214,12 +4291,12 @@ export class VybeAiPaneWithCustomTitle extends ViewPane {
 		page.appendChild(messageHeader);
 
 	// AI response area (scrollable within page, initially empty)
-	// Equal padding on both sides
+	// Equal padding on both sides with scrollbar overlay compensation
 	const aiResponseArea = $(".vybe-ai-response-area");
 	aiResponseArea.setAttribute("data-response-for", message.id);
 	aiResponseArea.style.flex = "1"; // Take remaining space
 	aiResponseArea.style.overflow = "auto"; // Scrollable for long AI responses
-	aiResponseArea.style.padding = "0 18px 16px 18px"; // Equal horizontal padding
+	aiResponseArea.style.padding = "0 10px 16px 18px"; // Right: 10px (so 10+8 scrollbar = 18px visual), Left: 18px
 	aiResponseArea.style.boxSizing = "border-box";
 	page.appendChild(aiResponseArea);
 
@@ -4290,7 +4367,7 @@ export class VybeAiPaneWithCustomTitle extends ViewPane {
 	const fileInfo = $(".composer-code-block-file-info");
 	fileInfo.style.display = "flex";
 	fileInfo.style.alignItems = "center";
-	fileInfo.style.gap = "6px";
+	fileInfo.style.gap = "0";
 	fileInfo.style.flex = "1";
 	fileInfo.style.minWidth = "0";
 	fileInfo.style.overflow = "hidden";
@@ -4304,17 +4381,27 @@ export class VybeAiPaneWithCustomTitle extends ViewPane {
 		spinner.style.flexShrink = "0";
 		fileInfo.appendChild(spinner);
 	} else {
-		// Full state: Show file type badge
-		const typeBadge = $("div");
-		typeBadge.textContent = language.toUpperCase().substring(0, 2);
-		typeBadge.style.fontSize = "10px";
-		typeBadge.style.fontWeight = "600";
-		typeBadge.style.color = "var(--vscode-foreground)";
-		typeBadge.style.padding = "2px 4px";
-		typeBadge.style.borderRadius = "3px";
-		typeBadge.style.backgroundColor = "color-mix(in srgb, var(--vscode-button-background) 30%, transparent)";
-		typeBadge.style.flexShrink = "0";
-		fileInfo.appendChild(typeBadge);
+		// Full state: Show file icon (like file explorer)
+		const fileIconContainer = $("span.file-icon-container");
+		fileIconContainer.style.display = "inline-flex";
+		fileIconContainer.style.alignItems = "center";
+		fileIconContainer.style.justifyContent = "center";
+		fileIconContainer.style.flexShrink = "0";
+		fileIconContainer.style.width = "16px";
+		fileIconContainer.style.height = "16px";
+		fileIconContainer.style.verticalAlign = "middle";
+		fileIconContainer.classList.add("show-file-icons"); // Enable file icon theme
+
+		// Create a resource label with file icon (CSS will hide the text)
+		const fileUri = URI.file(filename);
+		const fileLabel = this.resourceLabels.create(fileIconContainer, { supportIcons: true });
+		fileLabel.setFile(fileUri, {
+			fileKind: FileKind.FILE,
+			hidePath: true
+		});
+
+		fileIconContainer.style.marginRight = "4px";
+		fileInfo.appendChild(fileIconContainer);
 	}
 
 	// Filename (always shown)
