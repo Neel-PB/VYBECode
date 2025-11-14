@@ -558,31 +558,112 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 	}
 
 	private createVybeModeToggle(): void {
-		// Create mode toggle container
-		const toggleContainer = append(this.leftContent, $('div.vybe-mode-toggle'));
+		if (this.isAuxiliary) {
+			return; // only show in primary window
+		}
 
-		// IDE button
-		const ideButton = append(toggleContainer, $('button.vybe-mode-btn.active'));
-		ideButton.textContent = 'IDE';
-		ideButton.title = 'Switch to IDE Mode';
+		const host = append(this.leftContent, $('.vybe-mode-toggle-host'));
+		const container = append(host, $('.vybe-mode-tab-container'));
+		container.id = 'vybeModeToggle';
+		container.dataset.mode = 'ide';
+		container.classList.add('ide-mode');
 
-		// VYBE button
-		const vibeButton = append(toggleContainer, $('button.vybe-mode-btn'));
-		vibeButton.textContent = 'VYBE';
-		vibeButton.title = 'Switch to Vibe Mode';
+		const track = append(container, $('.vybe-mode-track'));
 
-		// Click handlers
-		this._register(addDisposableListener(ideButton, EventType.CLICK, () => {
-			ideButton.classList.add('active');
-			vibeButton.classList.remove('active');
-			console.log('VYBE: Switched to IDE mode');
+		const soloTab = append(track, $('.vybe-mode-tab'));
+		soloTab.classList.add('vybe-mode-solo');
+		soloTab.dataset.mode = 'solo';
+		append(soloTab, $('.vybe-mode-label')).textContent = 'VYBE';
+
+		const iconWrapper = append(track, $('.vybe-mode-center-icon'));
+		const svgNS = 'http://www.w3.org/2000/svg';
+		const iconSvg = document.createElementNS(svgNS, 'svg');
+		iconSvg.setAttribute('viewBox', '0 0 512 512');
+		iconSvg.setAttribute('class', 'vybe-mode-icon');
+		iconSvg.setAttribute('focusable', 'false');
+		iconSvg.setAttribute('aria-hidden', 'true');
+		iconSvg.setAttribute('role', 'presentation');
+
+		const gradientId = `vybeToggleGradient-${Math.random().toString(36).slice(2, 8)}`;
+		const defs = document.createElementNS(svgNS, 'defs');
+		const gradient = document.createElementNS(svgNS, 'linearGradient');
+		gradient.setAttribute('id', gradientId);
+		gradient.setAttribute('x1', '0');
+		gradient.setAttribute('y1', '0');
+		gradient.setAttribute('x2', '0');
+		gradient.setAttribute('y2', '1');
+
+		const stopTop = document.createElementNS(svgNS, 'stop');
+		stopTop.setAttribute('offset', '0%');
+		stopTop.setAttribute('stop-color', '#3ecf8e');
+		gradient.append(stopTop);
+
+		const stopBottom = document.createElementNS(svgNS, 'stop');
+		stopBottom.setAttribute('offset', '100%');
+		stopBottom.setAttribute('stop-color', '#2aa66d');
+		gradient.append(stopBottom);
+
+		defs.append(gradient);
+		iconSvg.append(defs);
+
+		const equalizerGroup = document.createElementNS(svgNS, 'g');
+		equalizerGroup.setAttribute('fill', `url(#${gradientId})`);
+		equalizerGroup.setAttribute('transform', 'translate(49,60)');
+
+		const bars: Array<[number, number, number, number]> = [
+			[0, 160, 32, 192],
+			[48, 120, 32, 232],
+			[96, 80, 32, 272],
+			[144, 40, 32, 312],
+			[192, 180, 32, 172],
+			[240, 40, 32, 312],
+			[288, 80, 32, 272],
+			[336, 120, 32, 232],
+			[384, 160, 32, 192]
+		];
+
+		for (const [x, y, width, height] of bars) {
+			const rect = document.createElementNS(svgNS, 'rect');
+			rect.setAttribute('x', String(x));
+			rect.setAttribute('y', String(y));
+			rect.setAttribute('width', String(width));
+			rect.setAttribute('height', String(height));
+			rect.setAttribute('rx', '16');
+			equalizerGroup.append(rect);
+		}
+
+		iconSvg.append(equalizerGroup);
+		iconWrapper.append(iconSvg);
+
+		const ideTab = append(track, $('.vybe-mode-tab'));
+		ideTab.classList.add('vybe-mode-ide', 'active');
+		ideTab.dataset.mode = 'ide';
+		append(ideTab, $('.vybe-mode-label')).textContent = 'IDE';
+
+		type VybeMode = 'solo' | 'ide';
+		const setMode = (mode: VybeMode, initial = false): void => {
+			const isSolo = mode === 'solo';
+			soloTab.classList.toggle('active', isSolo);
+			ideTab.classList.toggle('active', !isSolo);
+			container.classList.toggle('solo-mode', isSolo);
+			container.classList.toggle('ide-mode', !isSolo);
+			container.dataset.mode = mode;
+
+			if (!initial) {
+				mainWindow.dispatchEvent(new CustomEvent('vybeModeChanged', { detail: { mode } }));
+			}
+		};
+
+		this._register(addDisposableListener(soloTab, EventType.CLICK, () => setMode('solo')));
+		this._register(addDisposableListener(ideTab, EventType.CLICK, () => setMode('ide')));
+		this._register(addDisposableListener(container, EventType.CLICK, event => {
+			const rect = container.getBoundingClientRect();
+			const clickOffset = event.clientX - rect.left;
+			const midpoint = rect.width / 2;
+			setMode(clickOffset < midpoint ? 'solo' : 'ide');
 		}));
 
-		this._register(addDisposableListener(vibeButton, EventType.CLICK, () => {
-			vibeButton.classList.add('active');
-			ideButton.classList.remove('active');
-			console.log('VYBE: Switched to VYBE mode');
-		}));
+		setMode('ide', true);
 	}
 
 	private createTitle(): void {

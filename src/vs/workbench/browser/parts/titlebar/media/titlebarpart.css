@@ -474,46 +474,167 @@
 	text-align: center;
 }
 
-/* VYBE Mode Toggle Buttons - positioned in titlebar-left */
-.titlebar-left .vybe-mode-toggle {
-	display: inline-flex;
+/* ========================================
+	VYBE Mode Toggle Styles
+	======================================== */
+
+.titlebar-left .vybe-mode-toggle-host {
+	display: flex;
 	align-items: center;
-	background-color: var(--vscode-input-background);
-	border-radius: 6px;
-	padding: 2px;
 	margin-left: 8px;
-	margin-right: 12px;
-	gap: 1px;
-	height: 24px;
+	margin-right: 4px;
+	-webkit-app-region: no-drag;
 }
 
-.vybe-mode-btn {
-	padding: 5px 14px;
+.titlebar-left .vybe-mode-tab-container {
+	outline: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	margin-left: 0;
 	border-radius: 6px;
-	border: none;
-	background: transparent;
-	color: var(--vscode-descriptionForeground);
-	font-size: 12px;
-	font-weight: 500;
+	background-color: transparent;
+	height: 28px;
+	width: 72px;
+	overflow: hidden;
+	position: relative;
+	border: 1px solid #eceff2;
 	cursor: pointer;
-	transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-	font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-	white-space: nowrap;
-	line-height: 1;
 }
 
-.vybe-mode-btn:hover {
+.vs-dark .titlebar-left .vybe-mode-tab-container {
+	border-color: #2a2c2f;
+}
+
+.titlebar-left .vybe-mode-tab-container::before {
+	content: '';
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	border-radius: inherit;
+	background: transparent;
+	pointer-events: none;
+	transition: background 0.25s cubic-bezier(.3, .8, .2, 1);
+}
+
+.titlebar-left .vybe-mode-tab-container.solo-mode::before {
+	background: #3ecf8e;
+}
+
+.titlebar-left .vybe-mode-tab-container.ide-mode::before {
+	background: rgba(255, 255, 255, 0.06);
+}
+
+.vs .titlebar-left .vybe-mode-tab-container.ide-mode::before {
+	background: #dce0e5;
+}
+
+.titlebar-left .vybe-mode-track {
+	display: flex;
+	align-items: center;
+	gap: 0;
+	padding: 0;
+	width: max-content;
+	transform: translateX(-22px);
+	transition: transform 0.25s cubic-bezier(.3, .8, .2, 1);
+	position: relative;
+	z-index: 1;
+}
+
+.titlebar-left .vybe-mode-tab-container.solo-mode .vybe-mode-track {
+	transform: translateX(22px);
+}
+
+.titlebar-left .vybe-mode-tab {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 40px;
+	height: 28px;
+	border-radius: 0;
+	font-size: 12px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: opacity 0.2s ease, color 0.2s ease;
+	color: inherit;
+	position: relative;
+	z-index: 1;
+	background: transparent;
+}
+
+.titlebar-left .vybe-mode-tab::after {
+	content: '';
+	position: absolute;
+	top: 0;
+	left: -6px;
+	width: calc(100% + 12px);
+	height: 100%;
+	background: transparent;
+	z-index: -1;
+	pointer-events: none;
+}
+
+.titlebar-left .vybe-mode-solo::after {
+	background: #3ecf8e;
+}
+
+.titlebar-left .vybe-mode-ide::after {
+	background: rgba(255, 255, 255, 0.06);
+}
+
+.vs .titlebar-left .vybe-mode-ide::after {
+	background: #dce0e5;
+}
+
+.titlebar-left .vybe-mode-tab-container.ide-mode .vybe-mode-solo::after,
+.titlebar-left .vybe-mode-tab-container.solo-mode .vybe-mode-ide::after {
+	background: transparent;
+}
+
+.vs .titlebar-left .vybe-mode-tab-container.solo-mode .vybe-mode-ide::after {
+	background: transparent;
+}
+
+.vs .titlebar-left .vybe-mode-tab-container.ide-mode .vybe-mode-ide::after {
+	background: #dce0e5;
+}
+
+.titlebar-left .vybe-mode-tab.active {
+	opacity: 1;
+	font-weight: 600;
+}
+
+.titlebar-left .vybe-mode-solo {
+	color: #ffffff;
+}
+
+.titlebar-left .vybe-mode-ide {
+	color: #3ecf8e;
+}
+
+.titlebar-left .vybe-mode-center-icon {
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 24px;
+	height: 24px;
+	margin: 0;
+	border-radius: 4px;
+	background-color: #ffffff;
 	color: var(--vscode-foreground);
+	z-index: 2;
 }
 
-/* VYBE: Active state uses VYBE green theme color */
-.vybe-mode-btn.active {
-	background-color: #3ecf8e; /* VYBE green */
-	color: #FFFFFF; /* White text for contrast */
-	box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.15);
-	font-weight: 500;
+.vs-dark .titlebar-left .vybe-mode-center-icon {
+	background-color: #1a1b1d;
 }
 
-.vybe-mode-btn.active:hover {
-	background-color: #35b87d; /* Slightly darker green on hover */
+.titlebar-left .vybe-mode-center-icon svg {
+	width: 18px;
+	height: 18px;
+	display: block;
 }
