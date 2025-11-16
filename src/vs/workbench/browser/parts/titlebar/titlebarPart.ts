@@ -55,6 +55,7 @@ import { IHoverDelegate } from '../../../../base/browser/ui/hover/hoverDelegate.
 import { CommandsRegistry } from '../../../../platform/commands/common/commands.js';
 import { safeIntl } from '../../../../base/common/date.js';
 import { IsCompactTitleBarContext, TitleBarVisibleContext } from '../../../common/contextkeys.js';
+import { IVybeModeService } from '../../../contrib/vybeMode/browser/vybeMode.js';
 
 export interface ITitleVariable {
 	readonly name: string;
@@ -306,7 +307,8 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		@IHostService private readonly hostService: IHostService,
 		@IEditorService private readonly editorService: IEditorService,
 		@IMenuService private readonly menuService: IMenuService,
-		@IKeybindingService private readonly keybindingService: IKeybindingService
+		@IKeybindingService private readonly keybindingService: IKeybindingService,
+		@IVybeModeService private readonly vybeModeService: IVybeModeService,
 	) {
 		super(id, { hasTitle: false }, themeService, storageService, layoutService);
 
@@ -641,29 +643,30 @@ export class BrowserTitlebarPart extends Part implements ITitlebarPart {
 		append(ideTab, $('.vybe-mode-label')).textContent = 'IDE';
 
 		type VybeMode = 'solo' | 'ide';
-		const setMode = (mode: VybeMode, initial = false): void => {
+		const updateVisualState = (mode: VybeMode): void => {
 			const isSolo = mode === 'solo';
 			soloTab.classList.toggle('active', isSolo);
 			ideTab.classList.toggle('active', !isSolo);
 			container.classList.toggle('solo-mode', isSolo);
 			container.classList.toggle('ide-mode', !isSolo);
 			container.dataset.mode = mode;
-
-			if (!initial) {
-				mainWindow.dispatchEvent(new CustomEvent('vybeModeChanged', { detail: { mode } }));
-			}
 		};
 
-		this._register(addDisposableListener(soloTab, EventType.CLICK, () => setMode('solo')));
-		this._register(addDisposableListener(ideTab, EventType.CLICK, () => setMode('ide')));
+		const applyServiceState = (isVybeMode: boolean): void => {
+			updateVisualState(isVybeMode ? 'solo' : 'ide');
+		};
+
+		applyServiceState(this.vybeModeService.isVybeMode);
+		this._register(this.vybeModeService.onDidChangeMode((isVybe) => applyServiceState(isVybe)));
+
+		this._register(addDisposableListener(soloTab, EventType.CLICK, () => this.vybeModeService.setMode(true)));
+		this._register(addDisposableListener(ideTab, EventType.CLICK, () => this.vybeModeService.setMode(false)));
 		this._register(addDisposableListener(container, EventType.CLICK, event => {
 			const rect = container.getBoundingClientRect();
 			const clickOffset = event.clientX - rect.left;
 			const midpoint = rect.width / 2;
-			setMode(clickOffset < midpoint ? 'solo' : 'ide');
+			this.vybeModeService.setMode(clickOffset < midpoint);
 		}));
-
-		setMode('ide', true);
 	}
 
 	private createTitle(): void {
@@ -1019,8 +1022,9 @@ export class MainBrowserTitlebarPart extends BrowserTitlebarPart {
 		@IEditorService editorService: IEditorService,
 		@IMenuService menuService: IMenuService,
 		@IKeybindingService keybindingService: IKeybindingService,
+		@IVybeModeService vybeModeService: IVybeModeService,
 	) {
-		super(Parts.TITLEBAR_PART, mainWindow, editorGroupService.mainPart, contextMenuService, configurationService, environmentService, instantiationService, themeService, storageService, layoutService, contextKeyService, hostService, editorService, menuService, keybindingService);
+		super(Parts.TITLEBAR_PART, mainWindow, editorGroupService.mainPart, contextMenuService, configurationService, environmentService, instantiationService, themeService, storageService, layoutService, contextKeyService, hostService, editorService, menuService, keybindingService, vybeModeService);
 	}
 }
 
@@ -1054,9 +1058,10 @@ export class AuxiliaryBrowserTitlebarPart extends BrowserTitlebarPart implements
 		@IEditorService editorService: IEditorService,
 		@IMenuService menuService: IMenuService,
 		@IKeybindingService keybindingService: IKeybindingService,
+		@IVybeModeService vybeModeService: IVybeModeService,
 	) {
 		const id = AuxiliaryBrowserTitlebarPart.COUNTER++;
-		super(`workbench.parts.auxiliaryTitle.${id}`, getWindow(container), editorGroupsContainer, contextMenuService, configurationService, environmentService, instantiationService, themeService, storageService, layoutService, contextKeyService, hostService, editorService, menuService, keybindingService);
+		super(`workbench.parts.auxiliaryTitle.${id}`, getWindow(container), editorGroupsContainer, contextMenuService, configurationService, environmentService, instantiationService, themeService, storageService, layoutService, contextKeyService, hostService, editorService, menuService, keybindingService, vybeModeService);
 	}
 
 	override get preventZoom(): boolean {

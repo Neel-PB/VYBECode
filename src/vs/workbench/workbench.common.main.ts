@@ -206,7 +206,8 @@ import './contrib/chat/browser/chat.contribution.js';
 import './contrib/inlineChat/browser/inlineChat.contribution.js';
 import './contrib/mcp/browser/mcp.contribution.js';
 
-// VYBE AI
+// VYBE
+import './contrib/vybeMode/browser/vybeMode.contribution.js';
 import './contrib/vybeAI/browser/vybeai.contribution.js';
 // Service temporarily disabled due to cyclic dependency
 // import './contrib/vybeAI/browser/vybeai.service.contribution.js';

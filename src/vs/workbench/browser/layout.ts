@@ -128,6 +128,7 @@ import { IStatusbarService } from "../services/statusbar/browser/statusbar.js";
 import { IFileService } from "../../platform/files/common/files.js";
 import { isCodeEditor } from "../../editor/browser/editorBrowser.js";
 import { coalesce } from "../../base/common/arrays.js";
+import { clamp } from "../../base/common/numbers.js";
 import { assertReturnsDefined } from "../../base/common/types.js";
 import {
 	INotificationService,
@@ -155,6 +156,7 @@ import { AuxiliaryBarPart } from "./parts/auxiliarybar/auxiliaryBarPart.js";
 import { ITelemetryService } from "../../platform/telemetry/common/telemetry.js";
 import { IAuxiliaryWindowService } from "../services/auxiliaryWindow/browser/auxiliaryWindowService.js";
 import { CodeWindow, mainWindow } from "../../base/browser/window.js";
+import { IVybeModeService } from "../contrib/vybeMode/browser/vybeMode.js";
 
 //#region Layout Implementation
 
@@ -228,6 +230,11 @@ const COMMAND_CENTER_SETTINGS = [
 	"workbench.navigationControl.enabled",
 	"workbench.experimental.share.enabled",
 ];
+
+const VYBE_TRANSITION_DURATION = 520;
+const VYBE_AUX_MIN_WIDTH = 400;
+const VYBE_AUX_MIN_RATIO = 0.2;
+const VYBE_PANEL_MIN_WIDTH = 320;
 
 export const TITLE_BAR_SETTINGS = [
 	LayoutSettings.ACTIVITY_BAR_LOCATION,
@@ -428,6 +435,15 @@ export abstract class Layout
 	private editorPartView!: ISerializableView;
 	private statusBarPartView!: ISerializableView;
 
+	private vybeModeActive = false;
+	private vybeOverlay: HTMLElement | null = null;
+	private vybeSlideContainer: HTMLElement | null = null;
+	private vybeTransitionHandle: number | undefined = undefined;
+	private vybeAuxiliaryObserver: ResizeObserver | undefined = undefined;
+	private vybeModeService!: IVybeModeService;
+	private vybePrevAuxWidth: number | undefined;
+	private vybeAuxStateCaptured = false;
+
 	private environmentService!: IBrowserWorkbenchEnvironmentService;
 	private extensionService!: IExtensionService;
 	private configurationService!: IConfigurationService;
@@ -471,6 +487,7 @@ export abstract class Layout
 		this.logService = accessor.get(ILogService);
 		this.telemetryService = accessor.get(ITelemetryService);
 		this.auxiliaryWindowService = accessor.get(IAuxiliaryWindowService);
+		this.vybeModeService = accessor.get(IVybeModeService);
 
 		// Parts
 		this.editorService = accessor.get(IEditorService);
@@ -488,6 +505,7 @@ export abstract class Layout
 
 		// Listeners
 		this.registerLayoutListeners();
+		this.registerVybeModeHandlers();
 
 		// State
 		this.initLayoutState(
@@ -532,6 +550,10 @@ export abstract class Layout
 				),
 			);
 		});
+
+		this._register(
+			this.onDidLayoutMainContainer(() => this.enforceAuxiliaryMinimumBaseline()),
+		);
 
 		// Configuration changes
 		this._register(
@@ -2279,8 +2301,8 @@ export abstract class Layout
 				)
 					? this.workbenchGrid.getViewCachedVisibleSize(this.panelPartView)
 					: isHorizontal(
-								this.stateModel.getRuntimeValue(LayoutStateKeys.PANEL_POSITION),
-						  )
+							this.stateModel.getRuntimeValue(LayoutStateKeys.PANEL_POSITION),
+						)
 						? this.workbenchGrid.getViewSize(this.panelPartView).height
 						: this.workbenchGrid.getViewSize(this.panelPartView).width;
 				this.stateModel.setInitializationValue(
@@ -3867,6 +3889,457 @@ export abstract class Layout
 		>("startupLayout", layoutDescriptor);
 
 		return result;
+	}
+
+	private registerVybeModeHandlers(): void {
+		this.applyVybeMode(this.vybeModeService?.isVybeMode ?? false);
+		if (this.vybeModeService) {
+			this._register(
+				this.vybeModeService.onDidChangeMode((isVybeMode) =>
+					this.applyVybeMode(isVybeMode),
+				),
+			);
+		}
+
+		this._register(
+			this.onDidLayoutMainContainer(() => {
+				if (this.vybeModeActive) {
+					this.updateVybeModeMetrics();
+				}
+			}),
+		);
+
+		this._register(
+			this.onDidChangePartVisibility(() => {
+				if (this.vybeModeActive) {
+					this.updateVybeModeMetrics();
+				}
+			}),
+		);
+
+		this._register(
+			toDisposable(() => this.stopObservingAuxiliaryForVybe()),
+		);
+	}
+
+	private applyVybeMode(activate: boolean): void {
+		if (!this.workbenchGrid || this.vybeModeActive === activate) {
+			return;
+		}
+
+		if (activate) {
+			this.captureAuxiliaryStateForVybe();
+		}
+
+		this.vybeModeActive = activate;
+		this.mainContainer.classList.toggle("vybe-mode-active", activate);
+
+		if (activate) {
+			this.ensureVybeSlideContainer();
+			const overlay = this.ensureVybeOverlay();
+			this.observeAuxiliaryForVybe();
+			
+			// Calculate initial state first (without transitions)
+			const auxWidth = this.ensureAuxiliaryForVybe();
+			const containerWidth = Math.max(
+				this.mainContainerDimension?.width ??
+					this.mainContainer.getBoundingClientRect().width ??
+					0,
+			);
+			const titleHeight = this.titleBarPartView.minimumHeight;
+			const statusHeight = this.statusBarPartView.minimumHeight;
+			
+			// Calculate slide distance first (needed for initial positioning)
+			const activityBarWidth = this.isVisible(Parts.ACTIVITYBAR_PART)
+				? this.activityBarPartView.minimumWidth
+				: 0;
+			const sidebarWidth = this.isVisible(Parts.SIDEBAR_PART)
+				? this.workbenchGrid.getViewSize(this.sideBarPartView).width ?? 0
+				: 0;
+			const editorWidth = this.isVisible(Parts.EDITOR_PART)
+				? this.workbenchGrid.getViewSize(this.editorPartView).width ?? 0
+				: 0;
+			const slideDistance = activityBarWidth + sidebarWidth + editorWidth;
+			
+			// ALWAYS reset overlay to initial state (off-screen right, invisible) BEFORE transitions
+			// This ensures it animates from the correct starting position every time
+			overlay.style.left = `${containerWidth}px`;
+			overlay.style.top = `${titleHeight}px`;
+			overlay.style.bottom = `${statusHeight}px`;
+			overlay.style.width = `${containerWidth - (auxWidth + 4)}px`;
+			overlay.style.opacity = "0";
+			overlay.style.transition = "none"; // Disable transitions for initial positioning
+			overlay.classList.remove("visible");
+			overlay.setAttribute("aria-hidden", "true");
+			
+			// Set slide distance variable to 0 initially and set transform to use CSS variable
+			// This ensures the transform always uses the variable, just with different values
+			this.mainContainer.style.setProperty("--vybe-slide-distance", "0px");
+			overlay.style.transform = `translateX(calc(-1 * var(--vybe-slide-distance, 0px)))`;
+			
+			// Force a reflow to ensure initial state is applied
+			void overlay.offsetHeight;
+			
+			// Re-enable transitions and trigger animation
+			overlay.style.transition = ""; // Re-enable CSS transitions
+			this.triggerVybeTransition();
+			
+			// Now set slide distance to final value - this will trigger both track and overlay animations
+			// The transform will automatically animate from translateX(0) to translateX(-slideDistance)
+			this.mainContainer.style.setProperty("--vybe-slide-distance", `${slideDistance}px`);
+			
+			// Update overlay positioning and visibility - use requestAnimationFrame to ensure smooth animation
+			requestAnimationFrame(() => {
+				if (this.vybeModeActive) {
+					this.updateVybeModeMetrics();
+				}
+			});
+		} else {
+			// For deactivation, we need to animate OUT, so keep transition active
+			this.triggerVybeTransition();
+			
+			// Reset slide distance to 0 (will trigger slide-out animation)
+			// The transform will reset to translateX(0), sliding the overlay back right
+			this.mainContainer.style.setProperty("--vybe-slide-distance", "0px");
+			
+			if (this.vybeOverlay) {
+				// Force a reflow to ensure the CSS variable change is recognized
+				void this.vybeOverlay.offsetHeight;
+				
+				// Keep panel solid during slide-out - explicitly set opacity to 1
+				// This overrides any CSS transitions and ensures it stays solid
+				this.vybeOverlay.style.opacity = "1";
+				// Only set aria-hidden for accessibility, but keep visible class for opacity
+				this.vybeOverlay.setAttribute("aria-hidden", "true");
+			}
+			
+			// After animation completes, clean up and hide panel
+			setTimeout(() => {
+				if (!this.vybeModeActive) {
+					this.stopObservingAuxiliaryForVybe();
+					this.restoreAuxiliaryStateForVybe();
+					this.mainContainer.classList.remove("vybe-mode-transitioning");
+					this.mainContainer.style.removeProperty("--vybe-slide-distance");
+					
+					if (this.vybeOverlay) {
+						// Now remove visible class and clean up styles after slide-out is complete
+						this.vybeOverlay.classList.remove("visible");
+						this.vybeOverlay.style.removeProperty("transform");
+						this.vybeOverlay.style.removeProperty("left");
+						this.vybeOverlay.style.removeProperty("width");
+						this.vybeOverlay.style.removeProperty("opacity");
+					}
+				}
+			}, VYBE_TRANSITION_DURATION);
+		}
+	}
+
+	private updateVybeModeMetrics(): void {
+		if (!this.vybeModeActive || !this.workbenchGrid) {
+			return;
+		}
+
+		this.ensureVybeSlideContainer();
+
+		const auxWidth = this.ensureAuxiliaryForVybe();
+		
+		// Calculate slide distance: slide the entire track left so aux pane is at left edge
+		// The slide distance should be enough to move activity bar + sidebar + editor off-screen
+		const activityBarWidth = this.isVisible(Parts.ACTIVITYBAR_PART)
+			? this.activityBarPartView.minimumWidth
+			: 0;
+		const sidebarWidth = this.isVisible(Parts.SIDEBAR_PART)
+			? this.workbenchGrid.getViewSize(this.sideBarPartView).width ?? 0
+			: 0;
+		const editorWidth = this.isVisible(Parts.EDITOR_PART)
+			? this.workbenchGrid.getViewSize(this.editorPartView).width ?? 0
+			: 0;
+		const slideDistance = activityBarWidth + sidebarWidth + editorWidth;
+
+		this.mainContainer.style.setProperty(
+			"--vybe-slide-distance",
+			`${slideDistance}px`,
+		);
+
+		const overlay = this.ensureVybeOverlay();
+		const titleHeight = this.titleBarPartView.minimumHeight;
+		const statusHeight = this.statusBarPartView.minimumHeight;
+		
+		// Calculate where Vybe panel should end up: to the right of aux pane
+		const containerWidth = Math.max(
+			this.mainContainerDimension?.width ??
+				this.mainContainer.getBoundingClientRect().width ??
+				0,
+		);
+		
+		// The Vybe panel's final position: auxWidth + 4px from left edge
+		// To slide in together with the track, we need to:
+		// 1. Position it initially off-screen to the right: containerWidth
+		// 2. Apply transform to slide it left by slideDistance
+		// 3. Final visual position: containerWidth - slideDistance = auxWidth + 4px
+		const vybePanelFinalLeft = auxWidth + 4; // 4px gap - final position
+		const vybePanelStartLeft = containerWidth; // Start off-screen to the right
+		
+		// Calculate how much to slide: we want final position at auxWidth + 4px
+		// So transform should move it: containerWidth - (auxWidth + 4) = slideDistance
+		// But we apply -slideDistance, so it slides left by slideDistance
+		// Position Vybe panel and apply transform to slide it in with the track
+		overlay.style.left = `${vybePanelStartLeft}px`;
+		overlay.style.right = "";
+		overlay.style.top = `${titleHeight}px`;
+		overlay.style.bottom = `${statusHeight}px`;
+		overlay.style.width = `${containerWidth - vybePanelFinalLeft}px`;
+		// Transform slides it left by slideDistance, so it ends up at containerWidth - slideDistance
+		// which should equal auxWidth + 4px when slideDistance = containerWidth - auxWidth
+		overlay.style.transform = `translateX(calc(-1 * var(--vybe-slide-distance, 0px)))`;
+		
+		// Remove inline opacity so CSS .visible class can control it
+		overlay.style.removeProperty("opacity");
+		overlay.classList.add("visible");
+		overlay.setAttribute("aria-hidden", "false");
+	}
+
+	private ensureVybeOverlay(): HTMLElement {
+		if (this.vybeOverlay) {
+			return this.vybeOverlay;
+		}
+
+		const overlay = document.createElement("section");
+		overlay.className = "vybe-mode-overlay";
+		overlay.setAttribute("role", "region");
+		overlay.setAttribute("aria-hidden", "true");
+
+		const surface = document.createElement("div");
+		surface.className = "vybe-mode-overlay__surface";
+
+		const placeholder = document.createElement("div");
+		placeholder.className = "vybe-mode-overlay__empty";
+		const heading = document.createElement("h3");
+		heading.textContent = "VYBE Panel";
+		placeholder.appendChild(heading);
+		const body = document.createElement("p");
+		body.textContent = "Drop your Vybe workspace UI here.";
+		placeholder.appendChild(body);
+
+		surface.appendChild(placeholder);
+		overlay.appendChild(surface);
+
+		// Append to main container, not editor container, so it's positioned absolutely
+		this.mainContainer.appendChild(overlay);
+		this.vybeOverlay = overlay;
+		return overlay;
+	}
+
+	private ensureVybeSlideContainer(): HTMLElement | null {
+		if (
+			this.vybeSlideContainer &&
+			this.vybeSlideContainer.isConnected
+		) {
+			return this.vybeSlideContainer;
+		}
+
+		const gridElement = this.workbenchGrid?.element;
+		if (!gridElement) {
+			return null;
+		}
+
+		const rootBranch =
+			gridElement.firstElementChild instanceof HTMLElement &&
+			gridElement.firstElementChild.classList.contains(
+				"monaco-grid-branch-node",
+			)
+				? gridElement.firstElementChild
+				: null;
+		const splitViewContainer =
+			rootBranch?.firstElementChild instanceof HTMLElement &&
+			rootBranch.firstElementChild.classList.contains(
+				"monaco-split-view2",
+			)
+			? (rootBranch.firstElementChild.querySelector(
+					".split-view-container",
+				) as HTMLElement | null)
+				: null;
+		if (!splitViewContainer) {
+			return null;
+		}
+
+		const middleView = Array.from(splitViewContainer.children).find(
+			(child): child is HTMLElement => {
+				if (!(child instanceof HTMLElement)) {
+					return false;
+				}
+
+				const firstChild = child.firstElementChild;
+				return (
+					firstChild instanceof HTMLElement &&
+					firstChild.classList.contains("monaco-grid-branch-node")
+				);
+			},
+		);
+
+		if (middleView) {
+			if (
+				this.vybeSlideContainer &&
+				this.vybeSlideContainer !== middleView
+			) {
+				this.vybeSlideContainer.classList.remove(
+					"vybe-central-track",
+				);
+			}
+			middleView.classList.add("vybe-central-track");
+			this.vybeSlideContainer = middleView;
+			return this.vybeSlideContainer;
+		}
+
+		return null;
+	}
+
+	private enforceAuxiliaryMinimumBaseline(): void {
+		if (!this.workbenchGrid || this.vybeModeActive) {
+			return;
+		}
+
+		if (this.stateModel.getRuntimeValue(LayoutStateKeys.AUXILIARYBAR_HIDDEN)) {
+			return;
+		}
+
+		const containerWidth =
+			this.mainContainerDimension?.width ??
+			this.mainContainer.getBoundingClientRect().width ??
+			0;
+		if (!containerWidth) {
+			return;
+		}
+
+		const minWidth = Math.min(
+			Math.max(VYBE_AUX_MIN_WIDTH, Math.round(containerWidth * VYBE_AUX_MIN_RATIO)),
+			containerWidth,
+		);
+		const auxSize = this.workbenchGrid.getViewSize(this.auxiliaryBarPartView);
+		const currentWidth = auxSize.width ?? 0;
+		if (currentWidth < minWidth) {
+			this.workbenchGrid.resizeView(this.auxiliaryBarPartView, {
+				width: minWidth,
+				height: auxSize.height ?? this.auxiliaryBarPartView.minimumHeight,
+			});
+		}
+	}
+
+	private ensureAuxiliaryForVybe(): number {
+		if (!this.workbenchGrid) {
+			return this.auxiliaryBarPartView.element?.offsetWidth ?? 0;
+		}
+
+		const containerWidth =
+			this.mainContainerDimension?.width ??
+			this.mainContainer.getBoundingClientRect().width ??
+			0;
+		if (!containerWidth) {
+			return this.auxiliaryBarPartView.element?.offsetWidth ?? 0;
+		}
+
+		this.captureAuxiliaryStateForVybe();
+
+		if (this.stateModel.getRuntimeValue(LayoutStateKeys.AUXILIARYBAR_HIDDEN)) {
+			this.setAuxiliaryBarHidden(false);
+		}
+
+		const auxSize = this.workbenchGrid.getViewSize(this.auxiliaryBarPartView);
+		let currentWidth = auxSize.width ?? 0;
+		const currentHeight = auxSize.height ?? 0;
+
+		const minWidthByRatio = Math.round(containerWidth * VYBE_AUX_MIN_RATIO);
+		const minWidth = Math.min(
+			Math.max(VYBE_AUX_MIN_WIDTH, minWidthByRatio),
+			containerWidth,
+		);
+		const maxAllowedWidth = Math.max(
+			containerWidth - Math.max(containerWidth * 0.5, VYBE_PANEL_MIN_WIDTH),
+			minWidth,
+		);
+		const targetWidth = clamp(
+			minWidth,
+			maxAllowedWidth,
+			currentWidth || minWidth,
+		);
+
+		if (!currentWidth || Math.abs(targetWidth - currentWidth) > 1) {
+			this.workbenchGrid.resizeView(this.auxiliaryBarPartView, {
+				width: targetWidth,
+				height: currentHeight || this.auxiliaryBarPartView.minimumHeight,
+			});
+			currentWidth = targetWidth;
+		}
+
+		return currentWidth;
+	}
+
+	private captureAuxiliaryStateForVybe(): void {
+		if (this.vybeAuxStateCaptured || !this.workbenchGrid) {
+			return;
+		}
+
+		this.vybeAuxStateCaptured = true;
+		const auxSize = this.workbenchGrid.getViewSize(this.auxiliaryBarPartView);
+		this.vybePrevAuxWidth = auxSize.width;
+	}
+
+	private restoreAuxiliaryStateForVybe(): void {
+		if (!this.vybeAuxStateCaptured || !this.workbenchGrid) {
+			return;
+		}
+
+		this.vybeAuxStateCaptured = false;
+
+		if (
+			this.vybePrevAuxWidth &&
+			isFinite(this.vybePrevAuxWidth) &&
+			this.vybePrevAuxWidth > 0
+		) {
+			const auxSize = this.workbenchGrid.getViewSize(this.auxiliaryBarPartView);
+			this.workbenchGrid.resizeView(this.auxiliaryBarPartView, {
+				width: this.vybePrevAuxWidth,
+				height: auxSize.height ?? this.auxiliaryBarPartView.minimumHeight,
+			});
+		}
+
+		// Skip closing aux panel when restoring from VYBE → IDE transition
+		// This prevents visible closing animation. The aux panel stays open since
+		// it was open in VYBE mode and we don't want to close it after the transition.
+		// User can manually close it if they want.
+	}
+
+	private triggerVybeTransition(): void {
+		this.mainContainer.classList.add("vybe-mode-transitioning");
+		if (typeof this.vybeTransitionHandle === "number") {
+			mainWindow.clearTimeout(this.vybeTransitionHandle);
+		}
+
+		this.vybeTransitionHandle = mainWindow.setTimeout(() => {
+			this.mainContainer.classList.remove("vybe-mode-transitioning");
+			this.vybeTransitionHandle = undefined;
+		}, VYBE_TRANSITION_DURATION);
+	}
+
+	private observeAuxiliaryForVybe(): void {
+		if (this.vybeAuxiliaryObserver || typeof ResizeObserver === "undefined") {
+			return;
+		}
+
+		const auxElement = this.auxiliaryBarPartView.element;
+		if (!auxElement) {
+			return;
+		}
+
+		this.vybeAuxiliaryObserver = new ResizeObserver(() =>
+			this.updateVybeModeMetrics(),
+		);
+		this.vybeAuxiliaryObserver.observe(auxElement);
+	}
+
+	private stopObservingAuxiliaryForVybe(): void {
+		this.vybeAuxiliaryObserver?.disconnect();
+		this.vybeAuxiliaryObserver = undefined;
 	}
 
 	override dispose(): void {
