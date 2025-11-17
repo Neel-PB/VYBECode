@@ -440,6 +440,10 @@ export abstract class Layout
 	private vybeSlideContainer: HTMLElement | null = null;
 	private vybeTransitionHandle: number | undefined = undefined;
 	private vybeAuxiliaryObserver: ResizeObserver | undefined = undefined;
+	private vybeResizer: HTMLElement | null = null;
+	private vybeResizerIsDragging = false;
+	private vybeResizerStartX = 0;
+	private vybeResizerStartAuxWidth = 0;
 	private vybeModeService!: IVybeModeService;
 	private vybePrevAuxWidth: number | undefined;
 	private vybeAuxStateCaptured = false;
@@ -2343,9 +2347,11 @@ export abstract class Layout
 		);
 	}
 
+	private _lastLayoutDimension: Dimension | undefined = undefined;
+
 	layout(): void {
 		if (!this.disposed) {
-			this._mainContainerDimension = getClientArea(
+			const newDimension = getClientArea(
 				this.state.runtime.mainWindowFullscreen
 					? mainWindow.document.body // in fullscreen mode, make sure to use <body> element because
 					: this.parent, // in that case the workbench will span the entire site
@@ -2353,28 +2359,42 @@ export abstract class Layout
 					? DEFAULT_EMPTY_WINDOW_DIMENSIONS
 					: DEFAULT_WORKSPACE_WINDOW_DIMENSIONS, // running with fallback to ensure no error is thrown (https://github.com/microsoft/vscode/issues/240242)
 			);
-			this.logService.trace(
-				`Layout#layout, height: ${this._mainContainerDimension.height}, width: ${this._mainContainerDimension.width}`,
-			);
 
-			size(
-				this.mainContainer,
-				this._mainContainerDimension.width,
-				this._mainContainerDimension.height,
-			);
+			// Only relayout if dimensions actually changed significantly (more than 1px)
+			// This prevents content changes in panels from triggering full workbench relayouts
+			// that cause other panels to shift
+			const TOLERANCE = 1;
+			const shouldLayout = !this._lastLayoutDimension ||
+				Math.abs(this._lastLayoutDimension.width - newDimension.width) > TOLERANCE ||
+				Math.abs(this._lastLayoutDimension.height - newDimension.height) > TOLERANCE;
 
-			// Layout the grid widget
-			this.workbenchGrid.layout(
-				this._mainContainerDimension.width,
-				this._mainContainerDimension.height,
-			);
-			this.initialized = true;
+			if (shouldLayout) {
+				this._mainContainerDimension = newDimension;
+				this.logService.trace(
+					`Layout#layout, height: ${this._mainContainerDimension.height}, width: ${this._mainContainerDimension.width}`,
+				);
 
-			// Emit as event
-			this.handleContainerDidLayout(
-				this.mainContainer,
-				this._mainContainerDimension,
-			);
+				size(
+					this.mainContainer,
+					this._mainContainerDimension.width,
+					this._mainContainerDimension.height,
+				);
+
+				// Layout the grid widget
+				this.workbenchGrid.layout(
+					this._mainContainerDimension.width,
+					this._mainContainerDimension.height,
+				);
+				this.initialized = true;
+
+				// Emit as event
+				this.handleContainerDidLayout(
+					this.mainContainer,
+					this._mainContainerDimension,
+				);
+
+				this._lastLayoutDimension = newDimension;
+			}
 		}
 	}
 
@@ -2449,6 +2469,17 @@ export abstract class Layout
 	}
 
 	setSize(part: Parts, size: IViewSize): void {
+		// In IDE mode, enforce max width of 50% for aux panel
+		if (part === Parts.AUXILIARYBAR_PART && !this.vybeModeActive && size.width !== undefined) {
+			const containerWidth = Math.max(
+				this.mainContainerDimension?.width ??
+					this.mainContainer.getBoundingClientRect().width ??
+					0,
+			);
+			const maxAuxWidth = containerWidth * 0.5;
+			size = { ...size, width: Math.min(size.width, maxAuxWidth) };
+		}
+		
 		this.workbenchGrid.resizeView(this.getPart(part), size);
 	}
 
@@ -2490,8 +2521,22 @@ export abstract class Layout
 				break;
 			case Parts.AUXILIARYBAR_PART:
 				viewSize = this.workbenchGrid.getViewSize(this.auxiliaryBarPartView);
+				let newAuxWidth = viewSize.width + sizeChangePxWidth;
+				
+				// In IDE mode, enforce maximum width of 50% of container
+				if (!this.vybeModeActive) {
+					const containerWidth = Math.max(
+						this.mainContainerDimension?.width ??
+							this.mainContainer.getBoundingClientRect().width ??
+							0,
+					);
+					const maxAuxWidth = containerWidth * 0.5;
+					newAuxWidth = Math.min(newAuxWidth, maxAuxWidth);
+				}
+				// In VYBE mode, constraints are handled by the custom resizer
+				
 				this.workbenchGrid.resizeView(this.auxiliaryBarPartView, {
-					width: viewSize.width + sizeChangePxWidth,
+					width: newAuxWidth,
 					height: viewSize.height,
 				});
 				break;
@@ -3938,6 +3983,7 @@ export abstract class Layout
 			this.ensureVybeSlideContainer();
 			const overlay = this.ensureVybeOverlay();
 			this.observeAuxiliaryForVybe();
+			this.ensureVybeResizer();
 			
 			// Calculate initial state first (without transitions)
 			const auxWidth = this.ensureAuxiliaryForVybe();
@@ -3964,9 +4010,11 @@ export abstract class Layout
 			// ALWAYS reset overlay to initial state (off-screen right, invisible) BEFORE transitions
 			// This ensures it animates from the correct starting position every time
 			overlay.style.left = `${containerWidth}px`;
+			// Top should match other panels - use titleHeight to align with aux panel
 			overlay.style.top = `${titleHeight}px`;
-			overlay.style.bottom = `${statusHeight}px`;
-			overlay.style.width = `${containerWidth - (auxWidth + 4)}px`;
+			// Bottom should be statusHeight + 3px to match other panels
+			overlay.style.bottom = `${statusHeight + 3}px`;
+			overlay.style.width = `${containerWidth - auxWidth}px`;
 			overlay.style.opacity = "0";
 			overlay.style.transition = "none"; // Disable transitions for initial positioning
 			overlay.classList.remove("visible");
@@ -3988,13 +4036,18 @@ export abstract class Layout
 			// The transform will automatically animate from translateX(0) to translateX(-slideDistance)
 			this.mainContainer.style.setProperty("--vybe-slide-distance", `${slideDistance}px`);
 			
-			// Update overlay positioning and visibility - use requestAnimationFrame to ensure smooth animation
-			requestAnimationFrame(() => {
-				if (this.vybeModeActive) {
-					this.updateVybeModeMetrics();
-				}
-			});
+		// Update overlay positioning and visibility - use requestAnimationFrame to ensure smooth animation
+		requestAnimationFrame(() => {
+			if (this.vybeModeActive) {
+				this.updateVybeModeMetrics();
+				this.updateVybeResizer();
+			}
+		});
 		} else {
+			// For deactivation, stop observing immediately to prevent layout issues
+			// The observer callback should not fire after we exit VYBE mode
+			this.stopObservingAuxiliaryForVybe();
+			
 			// For deactivation, we need to animate OUT, so keep transition active
 			this.triggerVybeTransition();
 			
@@ -4016,9 +4069,10 @@ export abstract class Layout
 			// After animation completes, clean up and hide panel
 			setTimeout(() => {
 				if (!this.vybeModeActive) {
-					this.stopObservingAuxiliaryForVybe();
 					this.restoreAuxiliaryStateForVybe();
+					this.cleanupVybeResizer();
 					this.mainContainer.classList.remove("vybe-mode-transitioning");
+					this.mainContainer.classList.remove("aux-snapped-closed"); // Clean up snapped-closed class
 					this.mainContainer.style.removeProperty("--vybe-slide-distance");
 					
 					if (this.vybeOverlay) {
@@ -4043,6 +4097,15 @@ export abstract class Layout
 
 		const auxWidth = this.ensureAuxiliaryForVybe();
 		
+		// Track if aux is snapped closed (invisible or width=0) for Vybe panel positioning
+		const containerWidth = Math.max(
+			this.mainContainerDimension?.width ??
+				this.mainContainer.getBoundingClientRect().width ??
+				0,
+		);
+		const isAuxVisible = this.workbenchGrid.isViewVisible(this.auxiliaryBarPartView);
+		const isAuxSnappedClosed = !isAuxVisible || auxWidth === 0;
+		
 		// Calculate slide distance: slide the entire track left so aux pane is at left edge
 		// The slide distance should be enough to move activity bar + sidebar + editor off-screen
 		const activityBarWidth = this.isVisible(Parts.ACTIVITYBAR_PART)
@@ -4066,37 +4129,47 @@ export abstract class Layout
 		const statusHeight = this.statusBarPartView.minimumHeight;
 		
 		// Calculate where Vybe panel should end up: to the right of aux pane
-		const containerWidth = Math.max(
-			this.mainContainerDimension?.width ??
-				this.mainContainer.getBoundingClientRect().width ??
-				0,
-		);
+		// (containerWidth, minAuxWidth, isAuxVisible, isAuxSnappedClosed already declared above)
 		
-		// The Vybe panel's final position: auxWidth + 4px from left edge
+		// The Vybe panel's final position: auxWidth from left edge (or 0 if aux is closed)
+		// When aux is closed, it has width 0, so Vybe panel starts at left edge
+		// The 4px gap will be created via CSS margin-left on the overlay (only if aux is visible)
 		// To slide in together with the track, we need to:
 		// 1. Position it initially off-screen to the right: containerWidth
 		// 2. Apply transform to slide it left by slideDistance
-		// 3. Final visual position: containerWidth - slideDistance = auxWidth + 4px
-		const vybePanelFinalLeft = auxWidth + 4; // 4px gap - final position
+		// 3. Final visual position: containerWidth - slideDistance = auxWidth (or 0 if aux is closed)
+		const vybePanelFinalLeft = isAuxSnappedClosed ? 0 : auxWidth;
 		const vybePanelStartLeft = containerWidth; // Start off-screen to the right
 		
-		// Calculate how much to slide: we want final position at auxWidth + 4px
-		// So transform should move it: containerWidth - (auxWidth + 4) = slideDistance
+		// Calculate how much to slide: we want final position at auxWidth
+		// So transform should move it: containerWidth - auxWidth = slideDistance
 		// But we apply -slideDistance, so it slides left by slideDistance
 		// Position Vybe panel and apply transform to slide it in with the track
 		overlay.style.left = `${vybePanelStartLeft}px`;
 		overlay.style.right = "";
+		// Top should match other panels - use titleHeight to align with aux panel
 		overlay.style.top = `${titleHeight}px`;
-		overlay.style.bottom = `${statusHeight}px`;
+		// Bottom should be statusHeight + 3px to match other panels
+		overlay.style.bottom = `${statusHeight + 3}px`;
 		overlay.style.width = `${containerWidth - vybePanelFinalLeft}px`;
 		// Transform slides it left by slideDistance, so it ends up at containerWidth - slideDistance
-		// which should equal auxWidth + 4px when slideDistance = containerWidth - auxWidth
+		// which should equal auxWidth when slideDistance = containerWidth - auxWidth (or 0 if aux is closed)
+		// When aux is closed, remove margin-left so overlay starts at left edge
+		if (isAuxSnappedClosed) {
+			overlay.style.marginLeft = "0";
+		} else {
+			// Reset to CSS default (4px gap between aux and Vybe panels)
+			overlay.style.marginLeft = "";
+		}
 		overlay.style.transform = `translateX(calc(-1 * var(--vybe-slide-distance, 0px)))`;
 		
 		// Remove inline opacity so CSS .visible class can control it
 		overlay.style.removeProperty("opacity");
 		overlay.classList.add("visible");
 		overlay.setAttribute("aria-hidden", "false");
+		
+		// Update resizer position to match current aux width
+		this.updateVybeResizer();
 	}
 
 	private ensureVybeOverlay(): HTMLElement {
@@ -4240,8 +4313,10 @@ export abstract class Layout
 
 		this.captureAuxiliaryStateForVybe();
 
+		// If aux panel is closed, allow it to stay closed in VYBE mode
+		// This allows Vybe panel to take full screen when aux is collapsed
 		if (this.stateModel.getRuntimeValue(LayoutStateKeys.AUXILIARYBAR_HIDDEN)) {
-			this.setAuxiliaryBarHidden(false);
+			return 0;
 		}
 
 		const auxSize = this.workbenchGrid.getViewSize(this.auxiliaryBarPartView);
@@ -4280,8 +4355,13 @@ export abstract class Layout
 		}
 
 		this.vybeAuxStateCaptured = true;
-		const auxSize = this.workbenchGrid.getViewSize(this.auxiliaryBarPartView);
-		this.vybePrevAuxWidth = auxSize.width;
+		// Capture closed state - if aux is closed, store 0 as width
+		if (this.stateModel.getRuntimeValue(LayoutStateKeys.AUXILIARYBAR_HIDDEN)) {
+			this.vybePrevAuxWidth = 0;
+		} else {
+			const auxSize = this.workbenchGrid.getViewSize(this.auxiliaryBarPartView);
+			this.vybePrevAuxWidth = auxSize.width ?? 0;
+		}
 	}
 
 	private restoreAuxiliaryStateForVybe(): void {
@@ -4291,22 +4371,34 @@ export abstract class Layout
 
 		this.vybeAuxStateCaptured = false;
 
+		const prevWidth = this.vybePrevAuxWidth;
 		if (
-			this.vybePrevAuxWidth &&
-			isFinite(this.vybePrevAuxWidth) &&
-			this.vybePrevAuxWidth > 0
+			typeof prevWidth === "number" &&
+			isFinite(prevWidth)
 		) {
 			const auxSize = this.workbenchGrid.getViewSize(this.auxiliaryBarPartView);
-			this.workbenchGrid.resizeView(this.auxiliaryBarPartView, {
-				width: this.vybePrevAuxWidth,
-				height: auxSize.height ?? this.auxiliaryBarPartView.minimumHeight,
-			});
+			
+			if (prevWidth === 0) {
+				// Was snapped closed - restore as invisible with width 0
+				this.workbenchGrid.setViewVisible(this.auxiliaryBarPartView, false);
+				this.workbenchGrid.resizeView(this.auxiliaryBarPartView, {
+					width: 0,
+					height: auxSize.height ?? this.auxiliaryBarPartView.minimumHeight,
+				});
+			} else if (prevWidth > 0) {
+				// Was open - restore with actual width
+				this.workbenchGrid.setViewVisible(this.auxiliaryBarPartView, true);
+				this.workbenchGrid.resizeView(this.auxiliaryBarPartView, {
+					width: prevWidth,
+					height: auxSize.height ?? this.auxiliaryBarPartView.minimumHeight,
+				});
+			}
 		}
 
-		// Skip closing aux panel when restoring from VYBE → IDE transition
-		// This prevents visible closing animation. The aux panel stays open since
-		// it was open in VYBE mode and we don't want to close it after the transition.
-		// User can manually close it if they want.
+		// Importantly, we do NOT toggle the auxiliary bar's visibility here.
+		// If the user snapped it closed via the sash, the grid's snap
+		// behaviour (and edge-drag reopen) should remain available in IDE
+		// mode. Visibility is controlled only by explicit toggles.
 	}
 
 	private triggerVybeTransition(): void {
@@ -4331,15 +4423,213 @@ export abstract class Layout
 			return;
 		}
 
-		this.vybeAuxiliaryObserver = new ResizeObserver(() =>
-			this.updateVybeModeMetrics(),
-		);
+		this.vybeAuxiliaryObserver = new ResizeObserver(() => {
+			// Only update VYBE metrics when in VYBE mode
+			// This prevents unnecessary layout work in IDE mode that could cause panels to shift
+			if (!this.vybeModeActive || !this.workbenchGrid) {
+				return;
+			}
+
+			// Update stored width so resizes in VYBE mode persist when switching back to IDE
+			const auxSize = this.workbenchGrid.getViewSize(this.auxiliaryBarPartView);
+			if (auxSize.width) {
+				this.vybePrevAuxWidth = auxSize.width;
+			}
+
+			// Update VYBE mode metrics and resizer position
+			this.updateVybeModeMetrics();
+			this.updateVybeResizer();
+		});
 		this.vybeAuxiliaryObserver.observe(auxElement);
 	}
 
 	private stopObservingAuxiliaryForVybe(): void {
 		this.vybeAuxiliaryObserver?.disconnect();
 		this.vybeAuxiliaryObserver = undefined;
+	}
+
+	private ensureVybeResizer(): HTMLElement {
+		if (this.vybeResizer) {
+			this.updateVybeResizer();
+			return this.vybeResizer;
+		}
+
+		const resizer = document.createElement("div");
+		resizer.className = "vybe-mode-resizer";
+		resizer.setAttribute("role", "separator");
+		resizer.setAttribute("aria-orientation", "vertical");
+		resizer.setAttribute("aria-label", "Resize auxiliary and Vybe panels");
+
+		// Set up pointer event handlers for dragging
+		const onPointerDown = (e: PointerEvent) => {
+			e.preventDefault();
+			e.stopPropagation();
+			
+			if (!this.vybeModeActive || !this.workbenchGrid) {
+				return;
+			}
+
+			this.vybeResizerIsDragging = true;
+			this.vybeResizerStartX = e.pageX;
+
+			const auxSize = this.workbenchGrid.getViewSize(this.auxiliaryBarPartView);
+			this.vybeResizerStartAuxWidth = auxSize.width ?? 0;
+
+			resizer.classList.add("active");
+			resizer.setPointerCapture(e.pointerId);
+
+			const onPointerMove = (moveEvent: PointerEvent) => {
+				if (!this.vybeResizerIsDragging || !this.vybeModeActive || !this.workbenchGrid) {
+					return;
+				}
+
+				moveEvent.preventDefault();
+				moveEvent.stopPropagation();
+
+				const deltaX = moveEvent.pageX - this.vybeResizerStartX;
+				const containerWidth = Math.max(
+					this.mainContainerDimension?.width ??
+						this.mainContainer.getBoundingClientRect().width ??
+						0,
+				);
+
+				// Calculate new aux width based on initial width + delta.
+				// This matches how the IDE sashes feel (1:1 with cursor).
+				let newAuxWidth = this.vybeResizerStartAuxWidth + deltaX;
+
+				// Calculate thresholds for snap behavior
+				const minAuxWidth = Math.max(400, containerWidth * 0.2);
+				const minVybeWidth = Math.max(320, containerWidth * 0.5);
+				const maxAuxWidth = containerWidth - minVybeWidth - 4; // 4px gap
+
+				// Enforce maximum (to protect Vybe panel minimum width)
+				if (newAuxWidth > maxAuxWidth) {
+					newAuxWidth = maxAuxWidth;
+				}
+
+				// Implement snap behavior with hysteresis (like VS Code's built-in snap):
+				// - Snap closed when dragging below (minAuxWidth - halfSize)
+				// - Snap open when dragging above (minAuxWidth - halfSize) when invisible
+				// This prevents jittery snapping on small movements and makes reopening easier
+				const snapThreshold = Math.floor(minAuxWidth / 2);
+				const snapCloseThreshold = minAuxWidth - snapThreshold;
+				const snapOpenThreshold = snapCloseThreshold; // Same threshold for symmetry
+				const currentAuxSize = this.workbenchGrid.getViewSize(this.auxiliaryBarPartView);
+				const isCurrentlyVisible = this.workbenchGrid.isViewVisible(this.auxiliaryBarPartView);
+				
+				// Determine if should be snapped based on current state and new width
+				let shouldBeSnapped: boolean;
+				if (isCurrentlyVisible) {
+					// Currently visible: only snap closed if we go significantly below minimum
+					shouldBeSnapped = newAuxWidth < snapCloseThreshold;
+				} else {
+					// Currently invisible: snap open if we go above the snap threshold (50% of minimum)
+					// This makes reopening easier - don't need to drag all the way to 100%
+					shouldBeSnapped = newAuxWidth < snapOpenThreshold;
+				}
+				
+				if (shouldBeSnapped) {
+					// Snap closed: hide the view and set width to 0
+					if (isCurrentlyVisible) {
+						this.workbenchGrid.setViewVisible(this.auxiliaryBarPartView, false);
+					}
+					// Set width to 0 when invisible
+					this.workbenchGrid.resizeView(this.auxiliaryBarPartView, {
+						width: 0,
+						height: currentAuxSize.height ?? this.auxiliaryBarPartView.minimumHeight,
+					});
+				} else {
+					// Snap open: show the view and set to desired width
+					if (!isCurrentlyVisible) {
+						this.workbenchGrid.setViewVisible(this.auxiliaryBarPartView, true);
+					}
+					// Clamp to prevent going below minimum
+					if (newAuxWidth < minAuxWidth) {
+						newAuxWidth = minAuxWidth;
+					}
+					this.workbenchGrid.resizeView(this.auxiliaryBarPartView, {
+						width: newAuxWidth,
+						height: currentAuxSize.height ?? this.auxiliaryBarPartView.minimumHeight,
+					});
+				}
+
+				// Store actual width for IDE restore (use 0 if snapped closed)
+				this.vybePrevAuxWidth = shouldBeSnapped ? 0 : newAuxWidth;
+
+				// Update resizer position and Vybe panel position
+				this.updateVybeResizer();
+				this.updateVybeModeMetrics();
+			};
+
+			const onPointerUp = (upEvent: PointerEvent) => {
+				if (!this.vybeResizerIsDragging) {
+					return;
+				}
+
+				upEvent.preventDefault();
+				upEvent.stopPropagation();
+				
+				this.vybeResizerIsDragging = false;
+				resizer.classList.remove("active");
+				resizer.releasePointerCapture(upEvent.pointerId);
+
+				// Remove event listeners
+				document.removeEventListener("pointermove", onPointerMove);
+				document.removeEventListener("pointerup", onPointerUp);
+			};
+
+			// Add event listeners for move and up
+			document.addEventListener("pointermove", onPointerMove);
+			document.addEventListener("pointerup", onPointerUp);
+		};
+
+		resizer.addEventListener("pointerdown", onPointerDown);
+
+		this.mainContainer.appendChild(resizer);
+		this.vybeResizer = resizer;
+		
+		this.updateVybeResizer();
+		return resizer;
+	}
+
+	private updateVybeResizer(): void {
+		if (!this.vybeResizer || !this.vybeModeActive || !this.workbenchGrid) {
+			return;
+		}
+
+		// Check if aux panel is snapped closed (invisible or width=0)
+		const isAuxVisible = this.workbenchGrid.isViewVisible(this.auxiliaryBarPartView);
+		const auxSize = this.workbenchGrid.getViewSize(this.auxiliaryBarPartView);
+		const auxWidth = auxSize.width ?? 0;
+		const isAuxSnappedClosed = !isAuxVisible || auxWidth === 0;
+
+		// Hide our custom resizer if aux is snapped closed
+		// The grid's built-in edge sash will handle reopening from the edge
+		if (isAuxSnappedClosed) {
+			this.vybeResizer.style.display = "none";
+		} else {
+			const titleHeight = this.titleBarPartView.minimumHeight;
+			const statusHeight = this.statusBarPartView.minimumHeight;
+			
+			// Position resizer in the 4px gap between aux and Vybe panels
+			// It spans the full 4px gap, positioned at auxWidth (left edge of gap)
+			this.vybeResizer.style.position = "absolute";
+			this.vybeResizer.style.left = `${auxWidth}px`;
+			this.vybeResizer.style.top = `${titleHeight}px`;
+			this.vybeResizer.style.bottom = `${statusHeight + 3}px`;
+			this.vybeResizer.style.width = "4px";
+			this.vybeResizer.style.zIndex = "25";
+			this.vybeResizer.style.cursor = "col-resize";
+			this.vybeResizer.style.display = "block";
+		}
+	}
+
+	private cleanupVybeResizer(): void {
+		if (this.vybeResizer) {
+			this.vybeResizer.remove();
+			this.vybeResizer = null;
+			this.vybeResizerIsDragging = false;
+		}
 	}
 
 	override dispose(): void {

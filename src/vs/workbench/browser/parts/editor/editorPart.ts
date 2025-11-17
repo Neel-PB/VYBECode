@@ -1311,20 +1311,44 @@ export class EditorPart extends Part<IEditorPartMemento> implements IEditorPart,
 		this.centeredLayoutWidget.boundarySashes = sashes;
 	}
 
+	private _lastEditorLayoutWidth: number | undefined = undefined;
+	private _lastEditorLayoutHeight: number | undefined = undefined;
+	private _lastEditorLayoutTop: number | undefined = undefined;
+	private _lastEditorLayoutLeft: number | undefined = undefined;
+
 	override layout(width: number, height: number, top: number, left: number): void {
-		this.top = top;
-		this.left = left;
+		// Only layout if dimensions/position actually changed
+		// This prevents content changes in other panels from triggering editor relayouts
+		// that cause panels to shift
+		const TOLERANCE = 0.5;
+		const shouldLayout = !this._lastEditorLayoutWidth || !this._lastEditorLayoutHeight ||
+			!this._lastEditorLayoutTop || !this._lastEditorLayoutLeft ||
+			Math.abs(this._lastEditorLayoutWidth - width) > TOLERANCE ||
+			Math.abs(this._lastEditorLayoutHeight - height) > TOLERANCE ||
+			Math.abs(this._lastEditorLayoutTop - top) > TOLERANCE ||
+			Math.abs(this._lastEditorLayoutLeft - left) > TOLERANCE;
 
-		// VYBE: Reduce height by 3px ONLY when panel is closed (to create gap above status bar)
-		// When panel is open, the gap is created by the panel's margin-top instead
-		const isPanelVisible = this.layoutService.isVisible(Parts.PANEL_PART);
-		const vybeHeight = isPanelVisible ? height : height - 3;
+		if (shouldLayout) {
+			this.top = top;
+			this.left = left;
 
-		// Layout contents
-		const contentAreaSize = super.layoutContents(width, vybeHeight).contentSize;
+			// VYBE: Reduce height by 3px ONLY when panel is closed (to create gap above status bar)
+			// When panel is open, the gap is created by the panel's margin-top instead
+			const isPanelVisible = this.layoutService.isVisible(Parts.PANEL_PART);
+			const vybeHeight = isPanelVisible ? height : height - 3;
 
-		// Layout editor container
-		this.doLayout(Dimension.lift(contentAreaSize), top, left);
+			// Layout contents
+			const contentAreaSize = super.layoutContents(width, vybeHeight).contentSize;
+
+			// Layout editor container
+			this.doLayout(Dimension.lift(contentAreaSize), top, left);
+
+			this._lastEditorLayoutWidth = width;
+			this._lastEditorLayoutHeight = height;
+			this._lastEditorLayoutTop = top;
+			this._lastEditorLayoutLeft = left;
+		}
+		// If dimensions/position didn't change, skip layout to prevent content-driven shifts
 	}
 
 	private doLayout(dimension: Dimension, top = this.top, left = this.left): void {

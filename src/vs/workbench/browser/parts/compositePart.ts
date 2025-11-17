@@ -507,14 +507,38 @@ export abstract class CompositePart<T extends Composite, MementoType extends obj
 		return AnchorAlignment.RIGHT;
 	}
 
+	private _lastLayoutWidth: number | undefined = undefined;
+	private _lastLayoutHeight: number | undefined = undefined;
+	private _lastLayoutTop: number | undefined = undefined;
+	private _lastLayoutLeft: number | undefined = undefined;
+
 	override layout(width: number, height: number, top: number, left: number): void {
-		super.layout(width, height, top, left);
+		// Only layout if the actual width/height/top/left parameters changed significantly
+		// Use tolerance of 0.5px to handle floating point rounding differences
+		// This prevents content changes (like sending messages) from triggering layout cascades
+		// that cause the grid to relayout and shift other panels
+		// Content changes don't change the width/height/top/left passed to layout(), so we can safely skip
+		const TOLERANCE = 0.5;
+		const shouldLayout = !this._lastLayoutWidth || !this._lastLayoutHeight || 
+			!this._lastLayoutTop || !this._lastLayoutLeft ||
+			Math.abs(this._lastLayoutWidth - width) > TOLERANCE || 
+			Math.abs(this._lastLayoutHeight - height) > TOLERANCE ||
+			Math.abs(this._lastLayoutTop - top) > TOLERANCE ||
+			Math.abs(this._lastLayoutLeft - left) > TOLERANCE;
 
-		// Layout contents
-		this.contentAreaSize = Dimension.lift(super.layoutContents(width, height).contentSize);
-
-		// Layout composite
-		this.activeComposite?.layout(this.contentAreaSize);
+		if (shouldLayout) {
+			// Only call super.layout() and layout contents if dimensions/position actually changed
+			super.layout(width, height, top, left);
+			this.contentAreaSize = Dimension.lift(super.layoutContents(width, height).contentSize);
+			this.activeComposite?.layout(this.contentAreaSize);
+			this._lastLayoutWidth = width;
+			this._lastLayoutHeight = height;
+			this._lastLayoutTop = top;
+			this._lastLayoutLeft = left;
+		}
+		// If dimensions/position didn't change significantly, skip ALL layout operations
+		// This completely prevents content-driven layout cascades that cause panels to shift
+		// Even if the grid calls layout() with slightly different params due to content changes, we ignore it
 	}
 
 	setBoundarySashes?(sashes: IBoundarySashes): void {

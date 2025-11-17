@@ -157,6 +157,23 @@
 	background-color: var(--vscode-sideBar-background); /* VYBE: Use theme panel color */
 }
 
+/* In VYBE mode, disable left edge resizing on aux panel while it is visible.
+   Edge sash reopening from closure is not supported in VYBE mode. */
+.monaco-workbench.vybe-mode-active:not(.noauxiliarybar) .monaco-sash.vertical[style*="left: 0"],
+.monaco-workbench.vybe-mode-active:not(.noauxiliarybar) .monaco-sash.vertical[style*="left:0"] {
+	pointer-events: none !important;
+	cursor: default !important;
+}
+
+/* In IDE mode, disable left edge sash when aux panel is closed.
+   This prevents hover indicator and dragging to reopen when aux is closed. */
+.monaco-workbench:not(.vybe-mode-active).noauxiliarybar .monaco-sash.vertical[style*="left: 0"],
+.monaco-workbench:not(.vybe-mode-active).noauxiliarybar .monaco-sash.vertical[style*="left:0"] {
+	pointer-events: none !important;
+	cursor: default !important;
+	opacity: 0 !important;
+}
+
 /* ========================================
 	VYBE Mode Layout + Overlay
 	======================================== */
@@ -186,6 +203,7 @@
 .monaco-workbench.vybe-mode-active .vybe-central-track {
 	/* stylelint-disable-next-line value-no-unknown-custom-properties */
 	transform: translateX(calc(-1 * var(--vybe-slide-distance, 0px)));
+	/* Custom CSS variable for dynamic slide distance */
 }
 
 .monaco-workbench .vybe-mode-overlay {
@@ -196,18 +214,40 @@
 	opacity: 0;
 	z-index: 20;
 	will-change: transform, left, opacity;
+	margin-left: 4px; /* 4px gap between aux panel and Vybe panel */
 }
+
+/* When aux is snapped closed, the overlay's margin-left is set to 0 via inline styles
+   so the Vybe panel starts at the left edge. */
 
 .monaco-workbench .vybe-mode-overlay.visible {
 	pointer-events: auto;
 	opacity: 1;
 }
 
+/* Vybe Resizer - 4px gap between aux and Vybe panels */
+.monaco-workbench.vybe-mode-active .vybe-mode-resizer {
+	position: absolute;
+	background: transparent;
+	touch-action: none;
+	transition: background-color 0.1s ease-out;
+	pointer-events: auto;
+}
+
+.monaco-workbench.vybe-mode-active .vybe-mode-resizer:hover,
+.monaco-workbench.vybe-mode-active .vybe-mode-resizer.active {
+	background-color: #3ecf8e; /* VYBE: Custom teal/green color for resize indicator */
+}
+
+.monaco-workbench:not(.vybe-mode-active) .vybe-mode-resizer {
+	display: none;
+}
+
 .monaco-workbench .vybe-mode-overlay__surface {
-	border-radius: 12px;
+	border-radius: 12px; /* Match other panels' border-radius */
 	background-color: var(--vscode-sideBar-background);
 	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-	border: 1px solid color-mix(in srgb, var(--vscode-sideBar-border) 60%, transparent);
+	border: none; /* Match other panels - no border */
 	width: 100%;
 	height: 100%;
 	overflow: hidden;

@@ -23,9 +23,12 @@ import { IAction, Separator, toAction } from '../../../../base/common/actions.js
 import { ToggleAuxiliaryBarAction } from './auxiliaryBarActions.js';
 import { assertReturnsDefined } from '../../../../base/common/types.js';
 import { LayoutPriority } from '../../../../base/browser/ui/splitview/splitview.js';
+import { Event } from '../../../../base/common/event.js';
+import { IViewSize } from '../../../../base/browser/ui/grid/grid.js';
 import { ToggleSidebarPositionAction } from '../../actions/layoutActions.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IMenuService } from '../../../../platform/actions/common/actions.js';
+import { mainWindow } from '../../../../base/browser/window.js';
 import { AbstractPaneCompositePart, CompositeBarPosition } from '../paneCompositePart.js';
 import { ActionsOrientation } from '../../../../base/browser/ui/actionbar/actionbar.js';
 import { IPaneCompositeBarOptions } from '../paneCompositeBar.js';
@@ -48,19 +51,93 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 	// Align with VYBE min width expectations
 	override readonly minimumWidth: number = 400;
-	override readonly maximumWidth: number = Number.POSITIVE_INFINITY;
 	override readonly minimumHeight: number = 0;
-	override readonly maximumHeight: number = Number.POSITIVE_INFINITY;
 
-	get preferredHeight(): number | undefined {
-		// Don't worry about titlebar or statusbar visibility
-		// The difference is minimal and keeps this function clean
-		return this.layoutService.mainContainerDimension.height * 0.4;
+	// Cache maximum width to prevent it from changing when content changes
+	// This prevents grid relayouts when aux panel content updates
+	private _cachedMaximumWidth: number | undefined = undefined;
+	private _maximumWidthInitialized: boolean = false;
+
+	// Dynamically cap aux width to at most 50% of the main container.
+	// This ensures the aux panel never takes more than half the IDE width.
+	override get maximumWidth(): number {
+		// If already initialized, return cached value immediately
+		// This prevents content changes from triggering constraint change detection
+		if (this._maximumWidthInitialized && this._cachedMaximumWidth !== undefined) {
+			return this._cachedMaximumWidth;
+		}
+
+		// Only compute once, on first access
+		const containerWidth =
+			this.layoutService.mainContainerDimension?.width ??
+			this.layoutService.mainContainer.getBoundingClientRect().width ??
+			Number.POSITIVE_INFINITY;
+
+		if (!isFinite(containerWidth) || containerWidth <= 0) {
+			this._cachedMaximumWidth = Number.POSITIVE_INFINITY;
+			this._maximumWidthInitialized = true;
+			return this._cachedMaximumWidth;
+		}
+
+		// Cache once and never update it
+		// This completely disconnects content changes from maximum width calculation
+		this._cachedMaximumWidth = containerWidth * 0.5;
+		this._maximumWidthInitialized = true;
+		
+		return this._cachedMaximumWidth;
 	}
 
-	get preferredWidth(): number | undefined {
-		const activeComposite = this.getActivePaneComposite();
+	// No special vertical constraints
+	override get maximumHeight(): number {
+		return Number.POSITIVE_INFINITY;
+	}
 
+	// Enable snapping behaviour like other panels: when dragged to minimum size,
+	// the grid will treat it as closable and allow dragging back from the edge.
+	override get snap(): boolean {
+		return true;
+	}
+
+	// Cache preferred height ONCE and never update it based on content changes
+	// This completely disconnects aux panel content from grid layout
+	private _cachedPreferredHeight: number | undefined = undefined;
+	private _preferredHeightInitialized: boolean = false;
+
+	get preferredHeight(): number | undefined {
+		// If already initialized, return cached value immediately without recalculating
+		// This prevents ANY content changes from affecting preferred height
+		if (this._preferredHeightInitialized && this._cachedPreferredHeight !== undefined) {
+			return this._cachedPreferredHeight;
+		}
+
+		// Only compute once, on first access
+		// Don't worry about titlebar or statusbar visibility
+		// The difference is minimal and keeps this function clean
+		const height = this.layoutService.mainContainerDimension.height * 0.4;
+		
+		// Cache once and never update it
+		// This completely disconnects content changes from preferred height calculation
+		this._cachedPreferredHeight = height;
+		this._preferredHeightInitialized = true;
+		
+		return this._cachedPreferredHeight;
+	}
+
+	// Cache preferred width ONCE and never update it based on content changes
+	// This completely disconnects aux panel content from grid layout
+	// The width is cached the first time it's queried and never changes unless explicitly reset
+	private _cachedPreferredWidth: number | undefined = undefined;
+	private _preferredWidthInitialized: boolean = false;
+
+	get preferredWidth(): number | undefined {
+		// If already initialized, return cached value immediately without checking content
+		// This prevents ANY content changes from affecting preferred width
+		if (this._preferredWidthInitialized && this._cachedPreferredWidth !== undefined) {
+			return this._cachedPreferredWidth;
+		}
+
+		// Only compute once, on first access
+		const activeComposite = this.getActivePaneComposite();
 		if (!activeComposite) {
 			return undefined;
 		}
@@ -70,8 +147,26 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 			return undefined;
 		}
 
-		return Math.max(width, 300);
+		const computedWidth = Math.max(width, 300);
+		
+		// Cache once and never update it
+		// This completely disconnects content changes from preferred width calculation
+		this._cachedPreferredWidth = computedWidth;
+		this._preferredWidthInitialized = true;
+		
+		return this._cachedPreferredWidth;
 	}
+
+	// Override onDidChange to completely suppress ALL events from aux panel
+	// Content changes in aux panel (like sending messages) should NOT trigger grid relayouts
+	// This completely disconnects aux panel content from grid layout system
+	override get onDidChange(): Event<IViewSize | undefined> {
+		// Return Event.None to prevent ANY events from propagating to the grid
+		// Even if something tries to fire _onDidChange.fire(), the grid won't receive it
+		// because it's listening to this getter, which always returns Event.None
+		return Event.None;
+	}
+
 
 	readonly priority = LayoutPriority.Low;
 
@@ -174,8 +269,25 @@ export class AuxiliaryBarPart extends AbstractPaneCompositePart {
 
 	override layout(width: number, height: number, top: number, left: number): void {
 		// VYBE: Reduce height by 3px to create gap above status bar
-		super.layout(width, height - 3, top, left);
+		// Store dimensions before calling super.layout to prevent recursive layout calls
+		const wasLayouting = this._isLayouting;
+		this._isLayouting = true;
+		
+		try {
+			super.layout(width, height - 3, top, left);
+		} finally {
+			// Only reset if we weren't already layouting (prevent recursion)
+			if (!wasLayouting) {
+				// Use requestAnimationFrame to reset flag after current layout completes
+				// This prevents content changes during layout from triggering another layout
+				mainWindow.requestAnimationFrame(() => {
+					this._isLayouting = false;
+				});
+			}
+		}
 	}
+
+	private _isLayouting: boolean = false;
 
 	protected getCompositeBarOptions(): IPaneCompositeBarOptions {
 		const $this = this;
